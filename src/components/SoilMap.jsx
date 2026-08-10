@@ -349,21 +349,19 @@ export default function SoilMap({
         const popup=<NutrientPopup title={p.plot_code} subtitle="Soil analysis plot" row={p} footer={`${p.classification || 'Pending'} • ${p.analyzed_at ? new Date(p.analyzed_at).toLocaleDateString() : 'Not analyzed'}`}/>;
         const boundary=sanitizeBoundary(p.boundary);
         const validBoundary=isSimpleBoundary(boundary);
-        const fallback=validBoundary?centerOfBoundary(boundary):null;
-        const pin=[Number(p.latitude ?? fallback?.[0]),Number(p.longitude ?? fallback?.[1])];
         const selected=p.id===selectedPlotId;
         const shape=validBoundary
           ? <Polygon className="animated-map-shape" positions={boundary} pathOptions={{color:selected?'#9b7200':'#cf9c19',weight:selected?3:2,fillColor:'#f2c84b',fillOpacity:selected ? .30 : .18}} interactive={!drawMode} bubblingMouseEvents={false} eventHandlers={{click:mapClick((row)=>!drawMode&&onPlotClick?.(row),p)}}><Tooltip sticky>{p.plot_code} • N {fmt(p.nitrogen,0)} • pH {fmt(p.ph,2)}</Tooltip>{showMapPopups && <Popup>{popup}</Popup>}</Polygon>
           : (!p.boundary?.length ? <Rectangle className="animated-map-shape" bounds={squareBounds(Number(p.latitude),Number(p.longitude),Number(p.coverage_m)||70)} pathOptions={{color:selected?'#9b7200':'#cf9c19',weight:selected?3:2,fillColor:'#f2c84b',fillOpacity:selected ? .28 : .19}} interactive={!drawMode} bubblingMouseEvents={false} eventHandlers={{click:mapClick((row)=>!drawMode&&onPlotClick?.(row),p)}}><Tooltip sticky>{p.plot_code} • N {fmt(p.nitrogen,0)} • pH {fmt(p.ph,2)}</Tooltip>{showMapPopups && <Popup>{popup}</Popup>}</Rectangle> : null);
-        const renderPin = validBoundary || !p.boundary?.length;
-        return <Fragment key={`plot-${p.id}-${geometryFingerprint(boundary)}-${rowRevision(p)}`}>{shape}{renderPin&&Number.isFinite(pin[0])&&Number.isFinite(pin[1])&&<CircleMarker className={`soil-plot-center-pin ${selected?'selected-map-pin':''}`} center={pin} radius={selected?10:7} pathOptions={{color:'#fff',weight:3,fillColor:selected?'#9b7200':'#cf9c19',fillOpacity:1}} interactive={!drawMode} bubblingMouseEvents={false} eventHandlers={{click:mapClick((row)=>!drawMode&&onPlotClick?.(row),p)}}><Tooltip direction="top" offset={[0,-7]}>{p.plot_code} • Soil analysis</Tooltip></CircleMarker>}</Fragment>;
+        // A persisted Soil Plot is represented by exactly one map object: its
+        // polygon/coverage shape. Older builds also drew a second center pin,
+        // which looked like a ghost duplicate at another location.
+        return <Fragment key={`plot-${p.id}-${geometryFingerprint(boundary)}-${rowRevision(p)}`}>{shape}</Fragment>;
       })}
 
       {v.droneMapping && showPublishedDrone && droneMappings.map((d) => {
         const boundary=sanitizeBoundary(d.boundary);
         if (!isSimpleBoundary(boundary)) return null;
-        const fallback=centerOfBoundary(boundary);
-        const pin=[Number(d.center_lat ?? d.latitude ?? fallback?.[0]),Number(d.center_lng ?? d.longitude ?? fallback?.[1])];
         const selected=d.id===selectedDroneId;
         return <Fragment key={`drone-${d.id}-${geometryFingerprint(boundary)}-${rowRevision(d)}`}>
           <Polygon
@@ -377,18 +375,6 @@ export default function SoilMap({
             <Tooltip sticky>{d.name} • N {fmt(d.nitrogen,0)} • pH {fmt(d.ph,2)}</Tooltip>
             {showMapPopups && <Popup><DronePopup drone={d} canDeleteDrone={canDeleteDrone} onDroneDelete={onDroneDelete}/></Popup>}
           </Polygon>
-          {Number.isFinite(pin[0]) && Number.isFinite(pin[1]) && <CircleMarker
-            className={`drone-center-pin ${selected?'selected-map-pin':''}`}
-            center={pin}
-            radius={selected?10:7}
-            pathOptions={{color:'#fff',weight:3,fillColor:selected?'#17698e':'#3e91cb',fillOpacity:1}}
-            interactive={!drawMode}
-            bubblingMouseEvents={false}
-            eventHandlers={{click:mapClick((row)=>!drawMode&&onDroneClick?.(row),d)}}
-          >
-            <Tooltip direction="top" offset={[0,-7]}>{d.name} • N {fmt(d.nitrogen,0)} • P {fmt(d.phosphorus,0)} • K {fmt(d.potassium,0)}</Tooltip>
-            {showMapPopups && <Popup><DronePopup drone={d} canDeleteDrone={canDeleteDrone} onDroneDelete={onDroneDelete}/></Popup>}
-          </CircleMarker>}
         </Fragment>;
       })}
       </LayerGroup>

@@ -26,7 +26,7 @@ function soilsLocalApi(){
         try{
           const auth=req.headers.authorization||'';
           const jwt=auth.startsWith('Bearer ')?auth.slice(7):'';
-          if(url==='/api/health') return json(res,200,{ok:true,service:'SOILS integrated API',version:'1.10.10'});
+          if(url==='/api/health') return json(res,200,{ok:true,service:'SOILS integrated API',version:'1.10.12'});
           if(url==='/api/farmer' && (req.method==='GET'||req.method==='POST')){
             const data=await handleFarmerWorkspace({jwt});
             return json(res,200,{ok:true,data});

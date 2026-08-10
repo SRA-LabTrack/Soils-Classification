@@ -125,6 +125,9 @@ export default function DashboardPage({ mode='admin' }) {
   const farmerSyncSeqRef=useRef(0);
   const farmerBoundarySigRef=useRef('');
   const workspaceLoadSeqRef=useRef(0);
+  // Synchronous write latch. React state updates are asynchronous, so relying only
+  // on `busy` can allow two submit events to enter before the button disables.
+  const spatialActionLockRef=useRef(false);
   const isDemo=!!user?.demo; const isAdmin=mode==='admin';
   const getFarmerWorkspace=async()=>{
     if(isDemo){const state=getDemoState();const farm=state.farms[0];return {farmId:farm?.id||null,bundle:farm?{farm,sensors:state.sensors.filter(s=>s.farm_id===farm.id),plots:state.plots.filter(p=>p.farm_id===farm.id),droneMappings:state.drone.filter(d=>d.farm_id===farm.id)}:null};}
@@ -475,20 +478,28 @@ export default function DashboardPage({ mode='admin' }) {
 
   async function runSpatialAction(action,payload,success,{tempId=null}={}){
     if(!ensureWrite())return false;
+    if(spatialActionLockRef.current){
+      setNotice('A map change is already being saved. Please wait for it to finish.');
+      return false;
+    }
+    spatialActionLockRef.current=true;
     const snapshot={farms,allSensors,allPlots,allDrone,bundle,selectedSensorId,selectedPlotId,selectedDroneId,focusTarget};
     closeSpatialUi();
     if(isDemo){
-      try{applyDemoAction(action,payload);syncDemoState(payload.farm_id||activeFarmId);setNotice(`${success} Demo changes are saved in this browser.`);setEditor(null);return true;}catch(err){setNotice(err.message);return false;}
+      try{applyDemoAction(action,payload);syncDemoState(payload.farm_id||activeFarmId);setNotice(`${success} Demo changes are saved in this browser.`);setEditor(null);return true;}catch(err){setNotice(err.message);return false;}finally{spatialActionLockRef.current=false;}
     }
-    applyOptimistic(action,payload,tempId);
+    // Plot and Drone creates are rendered only from the exact authoritative row
+    // returned by the server. Do not add a temporary polygon first: that old
+    // optimistic + authoritative handoff was the source of visible double/ghost
+    // plotting when React and the journal reconciled at slightly different times.
+    const serverOnlyCreate=action==='createPlot'||action==='createDroneMapping';
+    if(!serverOnlyCreate) applyOptimistic(action,payload,tempId);
     setBusy(true);
     try{
       const result=await adminAction(action,payload);
-      reconcileTempId(action,tempId,result);
+      if(!serverOnlyCreate) reconcileTempId(action,tempId,result);
       const farmId=payload.farm_id||result?.farmId||activeFarmId;
       let reconciled=false;
-      // Delete actions return the already-verified authoritative bundle. Apply it
-      // directly so no stale list response can reinsert a deleted layer.
       if(result?.bundle?.farm){ applyAuthoritativeBundle(farmId,result.bundle); reconciled=true; }
       else reconciled=await reconcileAuthoritativeFarm(farmId);
       setNotice(reconciled?success:`${success} The write is confirmed; the map will reconcile again on the next refresh.`);
@@ -497,7 +508,7 @@ export default function DashboardPage({ mode='admin' }) {
       setFarms(snapshot.farms);setAllSensors(snapshot.allSensors);setAllPlots(snapshot.allPlots);setAllDrone(snapshot.allDrone);setBundle(snapshot.bundle);
       setSelectedSensorId(snapshot.selectedSensorId);setSelectedPlotId(snapshot.selectedPlotId);setSelectedDroneId(snapshot.selectedDroneId);setFocusTarget(snapshot.focusTarget);
       setNotice(`The save could not be confirmed, so the previous map state was restored. ${err.message}`);return false;
-    }finally{setBusy(false);}
+    }finally{spatialActionLockRef.current=false;setBusy(false);}
   }
 
   async function runAction(action,payload,success){
@@ -818,8 +829,9 @@ function SensorCreateModal({point,orientation=0,onClose,onSave,busy}){const [f,s
 function PlotCreateModal({points,defaultName='Plot 1',onClose,onSave,busy}){
   const [f,setF]=useState({plot_code:defaultName,classification:'Pending',nitrogen:'',phosphorus:'',potassium:'',organic_matter:'',ph:'',notes:''});
   const [submitting,setSubmitting]=useState(false);
+  const submitLock=useRef(false);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
-  const submit=async(e)=>{e.preventDefault();if(submitting||busy)return;setSubmitting(true);try{await onSave(f);}finally{setSubmitting(false);}};
+  const submit=async(e)=>{e.preventDefault();if(submitLock.current||busy)return;submitLock.current=true;setSubmitting(true);try{await onSave(f);}finally{submitLock.current=false;setSubmitting(false);}};
   return <Modal title="Add Soil Analysis Plot" subtitle={`${points.length} polygon points captured. These exact points and values will be published as a new Appwrite record.`} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-grid two"><label>Plot name<input required value={f.plot_code} onChange={e=>set('plot_code',e.target.value)}/></label><label>Classification<select value={f.classification} onChange={e=>set('classification',e.target.value)}><option>Pending</option><option>Good</option><option>Monitor</option><option>Poor</option><option>Critical</option></select></label><label>Nitrogen<input type="number" step="0.01" value={f.nitrogen} onChange={e=>set('nitrogen',e.target.value)}/></label><label>Phosphorus<input type="number" step="0.01" value={f.phosphorus} onChange={e=>set('phosphorus',e.target.value)}/></label><label>Potassium<input type="number" step="0.01" value={f.potassium} onChange={e=>set('potassium',e.target.value)}/></label><label>Organic material (%)<input type="number" step="0.01" value={f.organic_matter} onChange={e=>set('organic_matter',e.target.value)}/></label><label>pH<input type="number" step="0.01" value={f.ph} onChange={e=>set('ph',e.target.value)}/></label><label className="full">Notes<textarea rows="3" value={f.notes} onChange={e=>set('notes',e.target.value)}/></label></div><ModalActions busy={busy||submitting} onClose={onClose} label="Create plot"/></form></Modal>}
 function DroneCreateModal({points,defaultName='Drone Mapping 1',onClose,onSave,busy}){
   const [f,setF]=useState({
@@ -837,8 +849,9 @@ function DroneCreateModal({points,defaultName='Drone Mapping 1',onClose,onSave,b
     notes:'',
   });
   const [submitting,setSubmitting]=useState(false);
+  const submitLock=useRef(false);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
-  const submit=async(e)=>{e.preventDefault();if(submitting||busy)return;setSubmitting(true);try{await onSave({...f,captured_at:f.captured_at?new Date(f.captured_at).toISOString():new Date().toISOString()});}finally{setSubmitting(false);}};
+  const submit=async(e)=>{e.preventDefault();if(submitLock.current||busy)return;submitLock.current=true;setSubmitting(true);try{await onSave({...f,captured_at:f.captured_at?new Date(f.captured_at).toISOString():new Date().toISOString()});}finally{submitLock.current=false;setSubmitting(false);}};
   return <Modal title="Add Drone Mapping" subtitle={`${points.length} polygon points captured. Add the soil observations represented by this drone-mapped area.`} onClose={onClose}>
     <form className="modal-form" onSubmit={submit}>
       <div className="form-grid two">

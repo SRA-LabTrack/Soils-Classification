@@ -258,7 +258,16 @@ function applySpatialChangeJournal(bundle,changes=[]){
       map.set(id,{...map.get(id),...payload,id,farm_id:payload.farm_id||bundle.farm.id});
     }
   }
-  return {...bundle,farm,sensors:[...sensors.values()],plots:[...plots.values()],droneMappings:[...drones.values()]};
+  // Final canonicalization is intentional even after journal replay. It makes
+  // one logical Sensor/Plot/Drone name equal one renderable record, protecting
+  // both Admin and Farmer from legacy duplicate rows or overlapping old events.
+  return {
+    ...bundle,
+    farm,
+    sensors:newestByName([...sensors.values()],'sensor_code'),
+    plots:newestByName([...plots.values()],'plot_code'),
+    droneMappings:newestByName([...drones.values()],'name'),
+  };
 }
 
 

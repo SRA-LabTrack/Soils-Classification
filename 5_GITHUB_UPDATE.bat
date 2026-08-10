@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo ================================================
-echo   SOILS v1.10.11 - GitHub / Vercel Update
+echo   SOILS v1.10.12 - GitHub / Vercel Update
 echo ================================================
 echo.
 
@@ -79,8 +79,8 @@ if errorlevel 1 (
   git config user.email "!GIT_EMAIL!" || goto :fail
 )
 
-echo [5/6] Committing v1.10.11...
-git commit -m "Update Soils Classification v1.10.11" || goto :fail
+echo [5/6] Committing v1.10.12...
+git commit -m "Update Soils Classification v1.10.12" || goto :fail
 
 echo [6/6] Pushing to GitHub main...
 git push -u origin main || goto :fail

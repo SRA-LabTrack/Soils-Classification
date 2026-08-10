@@ -610,7 +610,7 @@ async function seed() {
   console.log('✓ No premade farmer/farm/pins are seeded. Create farmers from the Admin account.');
 }
 
-console.log('\nSOILS Appwrite setup v1.10.10');
+console.log('\nSOILS Appwrite setup v1.10.12');
 console.log(`Endpoint: ${endpoint}`);
 console.log(`Project:  ${projectId}`);
 console.log(`Database: ${databaseId}\n`);

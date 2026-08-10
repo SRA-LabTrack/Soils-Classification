@@ -726,7 +726,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .soil-map .leaflet-overlay-pane svg,
 .soil-map .leaflet-marker-pane>*{transition:none!important}
 
-/* v1.10.11 — sharp structural geometry + fuller dashboard composition
+/* v1.10.12 — sharp structural geometry + fuller dashboard composition
    Keep glass depth, gradients and motion. Only structural surfaces are squared;
    semantic dots/pills/icons may remain circular where their meaning depends on it. */
 .sharp-layout .main-content{
