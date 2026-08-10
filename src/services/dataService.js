@@ -1,5 +1,4 @@
 import { APPWRITE, Query, tablesDB, realtime, Channel } from '../lib/appwrite';
-import { demoFarms, demoSensors, demoPlots, demoDroneMappings } from '../data/demoData';
 
 export const parseBoundary = (value, fallback=[]) => {
   if (!value) return fallback;
@@ -11,14 +10,35 @@ export const parseBoundary = (value, fallback=[]) => {
   return fallback;
 };
 
-export const demoBundle = (farmId) => ({
-  farm: demoFarms.find((farm) => farm.id === farmId) || demoFarms[0],
-  sensors: demoSensors.filter((sensor) => sensor.farm_id === farmId),
-  plots: demoPlots.filter((plot) => plot.farm_id === farmId),
-  droneMappings: demoDroneMappings.filter((row) => row.farm_id === farmId),
-});
-
 const normalizeFarm = (row) => ({ ...row, id:row.$id || row.id, boundary:parseBoundary(row.boundary_geojson, row.boundary || []) });
+
+const uniqueById = (rows=[]) => {
+  const seen=new Set();
+  return rows.filter((row)=>{
+    const id=row?.$id || row?.id;
+    if(!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
+
+const latestByKey = (rows=[], keyFn) => {
+  const map=new Map();
+  for(const row of rows){
+    const key=keyFn(row);
+    if(!key){ map.set(`id:${row?.$id||row?.id||Math.random()}`,row); continue; }
+    const prev=map.get(key);
+    const stamp=Date.parse(row?.$updatedAt||row?.$createdAt||0)||0;
+    const prevStamp=Date.parse(prev?.$updatedAt||prev?.$createdAt||0)||0;
+    if(!prev || stamp>=prevStamp) map.set(key,row);
+  }
+  return [...map.values()];
+};
+
+const recordNameKey=(row,field)=>{
+  const name=String(row?.[field]||'').trim().toLowerCase().replace(/\s+/g,' ');
+  return name ? `${row?.farm_id||''}::${name}` : `id:${row?.$id||row?.id||Math.random()}`;
+};
 
 const boundaryCenter = (boundary=[]) => {
   if (!boundary.length) return { latitude:0, longitude:0 };
@@ -50,7 +70,7 @@ export async function listFarms() {
     ttl: 0,
     total: false,
   });
-  return result.rows.map(normalizeFarm);
+  return uniqueById(result.rows).map(normalizeFarm);
 }
 
 export async function listAllSensors() {
@@ -60,7 +80,7 @@ export async function listAllSensors() {
   ]);
   const latest = new Map();
   for (const reading of readings.rows) if (!latest.has(reading.sensor_id)) latest.set(reading.sensor_id, reading);
-  return sensors.rows.map((sensor) => ({ ...sensor, id:sensor.$id, ...latest.get(sensor.$id) }));
+  return uniqueById(sensors.rows).map((sensor) => ({ ...sensor, id:sensor.$id, ...latest.get(sensor.$id) }));
 }
 
 export async function listAllPlots() {
@@ -70,12 +90,13 @@ export async function listAllPlots() {
   ]);
   const latest = new Map();
   for (const row of analyses.rows) if (!latest.has(row.plot_id)) latest.set(row.plot_id, row);
-  return plots.rows.map((plot)=>({ ...plot, id:plot.$id, boundary:parseBoundary(plot.boundary_geojson), ...latest.get(plot.$id) }));
+  const valid=uniqueById(plots.rows).filter((plot)=>latest.has(plot.$id));
+  return latestByKey(valid,(row)=>recordNameKey(row,'plot_code')).map((plot)=>({ ...plot, id:plot.$id, boundary:parseBoundary(plot.boundary_geojson), ...latest.get(plot.$id) }));
 }
 
 export async function listAllDroneMappings() {
   const result = await tablesDB.listRows({ databaseId:APPWRITE.databaseId, tableId:APPWRITE.tables.drone, queries:[Query.limit(500)], ttl:0, total:false }).catch(()=>({rows:[]}));
-  return result.rows.map(normalizeDrone);
+  return latestByKey(uniqueById(result.rows),(row)=>recordNameKey(row,'name')).map(normalizeDrone);
 }
 
 
@@ -154,10 +175,12 @@ export async function loadFarmBundle(farmId) {
   const latestAnalysis = new Map();
   for (const analysis of analysesResult.rows) if (!latestAnalysis.has(analysis.plot_id)) latestAnalysis.set(analysis.plot_id, analysis);
 
+  const plotRows=latestByKey(uniqueById(plotsResult.rows).filter((plot)=>latestAnalysis.has(plot.$id)),(row)=>recordNameKey(row,'plot_code'));
+  const droneRows=latestByKey(uniqueById(droneResult.rows),(row)=>recordNameKey(row,'name'));
   return {
     farm: normalizeFarm(farm),
-    sensors: sensorsResult.rows.map((sensor) => ({ ...sensor, id:sensor.$id, ...latestReading.get(sensor.$id) })),
-    plots: plotsResult.rows.map((plot) => ({ ...plot, id:plot.$id, boundary:parseBoundary(plot.boundary_geojson), ...latestAnalysis.get(plot.$id) })),
-    droneMappings: droneResult.rows.map(normalizeDrone),
+    sensors: uniqueById(sensorsResult.rows).map((sensor) => ({ ...sensor, id:sensor.$id, ...latestReading.get(sensor.$id) })),
+    plots: plotRows.map((plot) => ({ ...plot, id:plot.$id, boundary:parseBoundary(plot.boundary_geojson), ...latestAnalysis.get(plot.$id) })),
+    droneMappings: droneRows.map(normalizeDrone),
   };
 }

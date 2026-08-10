@@ -94,6 +94,7 @@ const tables = [
       float('latitude', true),
       float('longitude', true),
       float('coverage_m'),
+      float('orientation_deg'),
       varchar('status', 32),
       datetime('installed_at'),
       datetime('last_seen_at'),
@@ -179,6 +180,23 @@ const tables = [
       varchar('status', 32),
     ],
     indexes: [index('farm_id_idx', 'farm_id'), index('captured_at_idx', 'captured_at')],
+  },
+  {
+    id: 'spatial_changes',
+    name: 'Spatial Changes',
+    columns: [
+      varchar('farm_id', 36, true),
+      varchar('entity_type', 20, true),
+      varchar('entity_id', 36),
+      varchar('logical_key', 128),
+      varchar('action', 16, true),
+      text('payload_json'),
+      datetime('changed_at', true),
+    ],
+    indexes: [
+      index('farm_id_idx', 'farm_id'),
+      index('changed_at_idx', 'changed_at'),
+    ],
   },
 ];
 
@@ -469,20 +487,32 @@ async function repairExistingFarmerAccess() {
     return;
   }
 
-  const [profilesResult, sensorsResult, readingsResult, plotsResult, analysesResult, droneResult] = await Promise.all([
+  const [profilesResult, sensorsResult, readingsResult, plotsResult, analysesResult, droneResult, changesResult] = await Promise.all([
     setupListRows('profiles'),
     setupListRows('sensor_stations'),
     setupListRows('sensor_readings'),
     setupListRows('soil_plots'),
     setupListRows('soil_analyses'),
     setupListRows('drone_mappings'),
+    setupListRows('spatial_changes'),
   ]);
 
   const ownerByFarm = new Map(farms.map((farm) => [farm.$id, farm.farmer_id]));
+  const farmByOwner = new Map();
+  for (const farm of farms) if (farm.farmer_id && !farmByOwner.has(farm.farmer_id)) farmByOwner.set(farm.farmer_id,farm.$id);
   const targets = [];
   for (const farm of farms) targets.push(['farms', farm, farm.farmer_id]);
   for (const profile of profilesResult?.rows || []) {
-    if (profile.role === 'farmer' && profile.user_id) targets.push(['profiles', profile, profile.user_id]);
+    if (profile.role === 'farmer' && profile.user_id) {
+      const ownedFarmId=farmByOwner.get(profile.user_id);
+      if (ownedFarmId && profile.farm_id !== ownedFarmId) {
+        await request('PATCH', `/tablesdb/${databaseId}/tables/profiles/rows/${profile.$id}`, {data:{farm_id:ownedFarmId,active:true},permissions:perms(profile.user_id)});
+        profile.farm_id=ownedFarmId;
+        profile.$permissions=perms(profile.user_id);
+        console.log(`+ Re-linked farmer profile ${profile.user_id} -> ${ownedFarmId}`);
+      }
+      targets.push(['profiles', profile, profile.user_id]);
+    }
   }
   for (const [tableId, rows] of [
     ['sensor_stations', sensorsResult?.rows || []],
@@ -490,6 +520,7 @@ async function repairExistingFarmerAccess() {
     ['soil_plots', plotsResult?.rows || []],
     ['soil_analyses', analysesResult?.rows || []],
     ['drone_mappings', droneResult?.rows || []],
+    ['spatial_changes', changesResult?.rows || []],
   ]) {
     for (const row of rows) {
       const farmerId = ownerByFarm.get(row.farm_id);
@@ -512,12 +543,54 @@ async function repairExistingFarmerAccess() {
     : '✓ Existing farmer row permissions are already synchronized');
 }
 
+
+async function cleanupLegacySampleArtifacts() {
+  // Older SOILS builds seeded a Sample Farm, three NPK sensors and LAB-A1.
+  // Those fixed IDs are safe to remove and were the source of the recurring
+  // yellow plot pin after setup was rerun. User-created records use random IDs.
+  const legacyRows = [
+    ['sensor_readings','reading_sensor_farmer1_01'],
+    ['sensor_readings','reading_sensor_farmer1_02'],
+    ['sensor_readings','reading_sensor_farmer1_03'],
+    ['soil_analyses','analysis_farmer1_a1'],
+    ['sensor_stations','sensor_farmer1_01'],
+    ['sensor_stations','sensor_farmer1_02'],
+    ['sensor_stations','sensor_farmer1_03'],
+    ['soil_plots','plot_farmer1_a1'],
+  ];
+  let removed=0;
+  for (const [tableId,rowId] of legacyRows) {
+    const existing = await request('GET', `/tablesdb/${databaseId}/tables/${tableId}/rows/${rowId}`, undefined, {allow404:true});
+    if (!existing) continue;
+    await request('DELETE', `/tablesdb/${databaseId}/tables/${tableId}/rows/${rowId}`, undefined, {allow404:true});
+    removed++;
+  }
+
+  const legacyFarm = await request('GET', `/tablesdb/${databaseId}/tables/farms/rows/farm_soil_farmer_1`, undefined, {allow404:true});
+  if (legacyFarm) {
+    const oldBoundary = polygon(10.4247, 122.9225);
+    const isUntouchedLegacyBoundary = String(legacyFarm.boundary_geojson || '') === String(oldBoundary);
+    const oldLocation = String(legacyFarm.location_name || '') === 'Replace with the actual farm location';
+    const oldName = String(legacyFarm.name || '') === 'Sample Farm';
+    if (isUntouchedLegacyBoundary || oldLocation || oldName) {
+      await request('PATCH', `/tablesdb/${databaseId}/tables/farms/rows/${legacyFarm.$id}`, {
+        data: {
+          ...(oldName ? {name:`${legacyFarm.farmer_name || 'Farmer'} Farm`} : {}),
+          ...(oldLocation ? {location_name:'Farm location not set'} : {}),
+          ...(isUntouchedLegacyBoundary ? {boundary_geojson:'[]',area_hectares:0,status:'Unmapped',last_analysis_at:null} : {}),
+        },
+        permissions: perms(legacyFarm.farmer_id),
+      });
+    }
+  }
+  console.log(removed ? `+ Removed ${removed} legacy sample map records` : '✓ No legacy sample map records remain');
+}
+
 async function seed() {
+  // Setup may optionally create the administrator account, but it never creates
+  // a premade farmer, farm boundary, sensor, soil plot or drone mapping.
   const adminEmail = process.env.APPWRITE_ADMIN_EMAIL;
   const adminPass = process.env.APPWRITE_ADMIN_PASSWORD;
-  const farmerEmail = process.env.APPWRITE_FARMER_EMAIL;
-  const farmerPass = process.env.APPWRITE_FARMER_PASSWORD;
-
   const admin = await ensureUser(
     'soil_admin_1',
     adminEmail,
@@ -525,148 +598,19 @@ async function seed() {
     process.env.APPWRITE_ADMIN_NAME || 'Soils Administrator',
     'admin',
   );
-  const farmer = await ensureUser(
-    'soil_farmer_1',
-    farmerEmail,
-    farmerPass,
-    process.env.APPWRITE_FARMER_NAME || 'Farmer 1',
-    'farmer',
-  );
-
   if (admin) {
-    await upsert(
-      'profiles',
-      'profile_admin_1',
-      {
-        user_id: 'soil_admin_1',
-        full_name: process.env.APPWRITE_ADMIN_NAME || 'Soils Administrator',
-        email: adminEmail,
-        role: 'admin',
-        active: true,
-      },
-      perms('soil_admin_1'),
-    );
+    await upsert('profiles','profile_admin_1',{
+      user_id:'soil_admin_1',
+      full_name:process.env.APPWRITE_ADMIN_NAME || 'Soils Administrator',
+      email:adminEmail,
+      role:'admin',
+      active:true,
+    },perms('soil_admin_1'));
   }
-
-  if (!farmer) {
-    console.log('• Sample farmer seed skipped (APPWRITE_FARMER_EMAIL/PASSWORD are blank).');
-    return;
-  }
-
-  const farmerName = process.env.APPWRITE_FARMER_NAME || 'Farmer 1';
-  const farmId = 'farm_soil_farmer_1';
-
-  await upsert(
-    'profiles',
-    'profile_farmer_1',
-    {
-      user_id: 'soil_farmer_1',
-      full_name: farmerName,
-      email: farmerEmail,
-      role: 'farmer',
-      active: true,
-      farm_id: farmId,
-    },
-    perms('soil_farmer_1'),
-  );
-
-  await upsert(
-    'farms',
-    farmId,
-    {
-      farmer_id: 'soil_farmer_1',
-      farmer_name: farmerName,
-      name: 'Sample Farm',
-      location_name: 'Replace with the actual farm location',
-      center_lat: 10.4247,
-      center_lng: 122.9225,
-      boundary_geojson: polygon(10.4247, 122.9225),
-      area_hectares: 18.4,
-      status: 'Good',
-      last_analysis_at: '2026-08-07T03:00:00.000Z',
-    },
-    perms('soil_farmer_1'),
-  );
-
-  const sensors = [
-    ['sensor_farmer1_01', 'NPK-01', 10.4265, 122.9204, 46, 31, 184, 6.42, 3.8, 31],
-    ['sensor_farmer1_02', 'NPK-02', 10.4230, 122.9256, 39, 25, 171, 6.13, 3.2, 28],
-    ['sensor_farmer1_03', 'NPK-03', 10.4214, 122.9202, 52, 33, 196, 6.60, 4.1, 34],
-  ];
-
-  for (const [id, code, lat, lng, n, p, k, ph, om, moist] of sensors) {
-    await upsert(
-      'sensor_stations',
-      id,
-      {
-        farm_id: farmId,
-        sensor_code: code,
-        latitude: lat,
-        longitude: lng,
-        coverage_m: 55,
-        status: 'Online',
-        installed_at: '2026-08-01T00:00:00.000Z',
-        last_seen_at: new Date().toISOString(),
-      },
-      perms('soil_farmer_1'),
-    );
-
-    await upsert(
-      'sensor_readings',
-      `reading_${id}`,
-      {
-        farm_id: farmId,
-        sensor_id: id,
-        nitrogen: n,
-        phosphorus: p,
-        potassium: k,
-        ph,
-        organic_matter: om,
-        moisture: moist,
-        recorded_at: new Date().toISOString(),
-      },
-      perms('soil_farmer_1'),
-    );
-  }
-
-  const plotId = 'plot_farmer1_a1';
-  await upsert(
-    'soil_plots',
-    plotId,
-    {
-      farm_id: farmId,
-      plot_code: 'LAB-A1',
-      latitude: 10.4250,
-      longitude: 122.9233,
-      coverage_m: 75,
-      sampled_at: '2026-08-06T03:00:00.000Z',
-    },
-    perms('soil_farmer_1'),
-  );
-
-  await upsert(
-    'soil_analyses',
-    'analysis_farmer1_a1',
-    {
-      farm_id: farmId,
-      plot_id: plotId,
-      nitrogen: 48,
-      phosphorus: 30,
-      potassium: 188,
-      ph: 6.48,
-      organic_matter: 3.9,
-      classification: 'Good',
-      sampled_at: '2026-08-06T03:00:00.000Z',
-      analyzed_at: '2026-08-07T03:00:00.000Z',
-      notes: 'Sample laboratory analysis. Replace with actual soil-analysis data.',
-    },
-    perms('soil_farmer_1'),
-  );
-
-  console.log('+ Seeded sample farm, 3 sensors, readings, and 1 soil analysis plot.');
+  console.log('✓ No premade farmer/farm/pins are seeded. Create farmers from the Admin account.');
 }
 
-console.log('\nSOILS Appwrite setup v1.7.0');
+console.log('\nSOILS Appwrite setup v1.10.10');
 console.log(`Endpoint: ${endpoint}`);
 console.log(`Project:  ${projectId}`);
 console.log(`Database: ${databaseId}\n`);
@@ -680,6 +624,7 @@ try {
     for (const idx of table.indexes) await ensureIndex(table.id, idx);
   }
 
+  await cleanupLegacySampleArtifacts();
   await seed();
   await repairExistingFarmerAccess();
   console.log('\n✓ Appwrite setup complete.\n');

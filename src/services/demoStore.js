@@ -1,17 +1,10 @@
-import { demoDroneMappings, demoFarms, demoPlots, demoSensors } from '../data/demoData';
-
-export const DEMO_STORE_KEY = 'soils_demo_workspace_v1_3';
+export const DEMO_STORE_KEY = 'soils_demo_workspace_v2_empty';
 const KEY = DEMO_STORE_KEY;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 function initialState() {
-  return {
-    farms: clone(demoFarms),
-    sensors: clone(demoSensors),
-    plots: clone(demoPlots),
-    drone: clone(demoDroneMappings),
-  };
+  return { farms: [], sensors: [], plots: [], drone: [] };
 }
 
 export function getDemoState() {
@@ -91,6 +84,7 @@ export function applyDemoAction(action, payload = {}) {
         latitude: Number(payload.latitude),
         longitude: Number(payload.longitude),
         coverage_m: Number(payload.coverage_m || 50),
+        orientation_deg: Number(payload.orientation_deg || 0),
         status: payload.status || 'Online',
         nitrogen: Number(payload.nitrogen || 0),
         phosphorus: Number(payload.phosphorus || 0),
@@ -109,6 +103,7 @@ export function applyDemoAction(action, payload = {}) {
         latitude: Number(payload.latitude ?? sensor.latitude),
         longitude: Number(payload.longitude ?? sensor.longitude),
         coverage_m: Number(payload.coverage_m ?? sensor.coverage_m),
+        orientation_deg: Number(payload.orientation_deg ?? sensor.orientation_deg ?? 0),
         status: payload.status ?? sensor.status,
         nitrogen: Number(payload.nitrogen ?? sensor.nitrogen),
         phosphorus: Number(payload.phosphorus ?? sensor.phosphorus),
@@ -118,6 +113,11 @@ export function applyDemoAction(action, payload = {}) {
         moisture: Number(payload.moisture ?? sensor.moisture),
         recorded_at: new Date().toISOString(),
       });
+      break;
+    }
+    case 'rotateSensor': {
+      const sensor = state.sensors.find((s) => s.id === payload.sensor_id);
+      if (sensor) sensor.orientation_deg = ((Number(payload.orientation_deg ?? sensor.orientation_deg ?? 0) % 360) + 360) % 360;
       break;
     }
     case 'deleteSensor':

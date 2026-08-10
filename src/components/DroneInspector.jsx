@@ -7,7 +7,7 @@ const fields=[
   ['organic_matter','Organic material','%'],['ph','pH',''],['moisture','Moisture','%'],
 ];
 
-export default function DroneInspector({drone,farmName,editable=false,onSave,onDelete,onClose,busy=false}){
+export default function DroneInspector({drone,farmName,editable=false,inline=false,onSave,onDelete,onClose,busy=false}){
   const [form,setForm]=useState(drone||{});
   const [editing,setEditing]=useState(false);
 
@@ -21,7 +21,7 @@ export default function DroneInspector({drone,farmName,editable=false,onSave,onD
   const cancelEdit=()=>{setForm(drone||{});setEditing(false)};
   const save=async()=>{await onSave?.({...drone,...form});setEditing(false)};
 
-  return <aside className="sensor-inspector drone-inspector">
+  return <aside className={`sensor-inspector drone-inspector ${inline?'inline-spatial-inspector':''}`}>
     <div className="inspector-head">
       <div className="sensor-inspector-icon drone-inspector-icon"><ScanLine size={19}/></div>
       <div><span>{farmName||'Farm drone mapping'}</span><h3>{drone.name}</h3></div>
@@ -57,9 +57,8 @@ export default function DroneInspector({drone,farmName,editable=false,onSave,onD
 
     {drone.notes&&<div className="drone-notes"><span>Observation notes</span><p>{drone.notes}</p></div>}
 
-    {editable&&!editing&&<div className="inspector-actions preview-actions">
+    {editable&&!editing&&<div className="inspector-actions preview-actions single-edit-row">
       <button className="danger-btn" disabled={busy} onClick={()=>onDelete?.(drone)}><Trash2 size={15}/> Delete mapping</button>
-      <button className="primary-btn" disabled={busy} onClick={()=>setEditing(true)}><Pencil size={15}/> Edit Mapping</button>
     </div>}
 
     {editable&&editing&&<div className="inspector-actions">

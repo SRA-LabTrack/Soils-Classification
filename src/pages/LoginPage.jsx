@@ -10,7 +10,7 @@ export default function LoginPage() {
   const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [show,setShow]=useState(false); const [busy,setBusy]=useState(false); const [error,setError]=useState('');
   useEffect(()=>{ if(user) nav(role==='admin'?'/admin':'/farm',{replace:true}); },[user,role,nav]);
   const submit=async(e)=>{e.preventDefault();setBusy(true);setError('');try{const next=await login(email,password);nav(next.labels?.includes('admin')?'/admin':'/farm');}catch(err){setError(err?.message||'Unable to sign in.');}finally{setBusy(false)}};
-  const demo=(r)=>{demoLogin(r);nav(r==='admin'?'/admin':'/farm')};
+  const demo=async(r)=>{setBusy(true);setError('');try{await demoLogin(r);nav(r==='admin'?'/admin':'/farm');}catch(err){setError(err?.message||'Unable to open demo session.');}finally{setBusy(false)}};
   return <div className="login-page">
     <section className="login-visual">
       <div className="visual-grid"/><div className="visual-glow glow-a"/><div className="visual-glow glow-b"/>
@@ -21,7 +21,7 @@ export default function LoginPage() {
     </section>
     <section className="login-panel"><div className="login-box"><div className="mobile-brand"><Brand/></div><div className="login-head"><span>WELCOME BACK</span><h2>Sign in to SOILS</h2><p>Use your Appwrite admin or farmer account.</p></div>
       <form onSubmit={submit}><label>Email address</label><div className="field"><Mail size={18}/><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" required/></div><label>Password</label><div className="field"><LockKeyhole size={18}/><input type={show?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required minLength={8}/><button type="button" onClick={()=>setShow(!show)}>{show?<EyeOff size={18}/>:<Eye size={18}/>}</button></div>{error&&<div className="login-error">{error}</div>}<button className="primary-login" disabled={busy}>{busy?'Signing in…':'Sign in'}<ArrowRight size={18}/></button></form>
-      <div className="demo-divider"><span>Local demo workspace • edits persist in this browser</span></div><div className="demo-buttons"><button onClick={()=>demo('admin')}>Demo Admin</button><button onClick={()=>demo('farmer')}>Demo Farmer</button></div>
+      <div className="demo-divider"><span>Empty local demo workspace • no premade farm or pins</span></div><div className="demo-buttons"><button onClick={()=>demo('admin')}>Demo Admin</button><button onClick={()=>demo('farmer')}>Demo Farmer</button></div>
       <small className="login-note">The API key stays server-only. It is used by the setup/admin API and is never bundled into the React browser app.</small>
     </div></section>
   </div>;
