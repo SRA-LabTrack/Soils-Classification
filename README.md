@@ -1,6 +1,13 @@
-# SOILS Classification v1.10.10
 
-v1.10.10 focuses on startup speed, instant delete behavior, and account/session correctness.
+## v1.10.11 Farmer navigation + sharp glass layout
+
+- **My Farm** now immediately fits the Farmer map to the currently saved farm boundary, even when clicked repeatedly, then refreshes the authoritative boundary in the background and refits if needed.
+- Dashboard structural surfaces now use **sharp square edges** instead of rounded cards while preserving the layered glass treatment, green/white gradients, shadows, highlights, hover lift, and page transitions.
+- Content grids stretch their panels and cards to use available space more evenly and reduce dead/negative space.
+
+# SOILS Classification v1.10.11
+
+v1.10.11 focuses on startup speed, instant delete behavior, and account/session correctness.
 
 ## Fixed in this version
 
@@ -24,7 +31,7 @@ v1.10.10 focuses on startup speed, instant delete behavior, and account/session 
 
 ## Existing Appwrite schema
 
-v1.10.10 uses the `spatial_changes` table introduced in v1.10.9. If you already ran the v1.10.9 setup successfully, you do not need to run setup again.
+v1.10.11 uses the `spatial_changes` table introduced in v1.10.9. If you already ran the v1.10.9 setup successfully, you do not need to run setup again.
 
 If `spatial_changes` was never created, run once:
 
@@ -34,7 +41,7 @@ npm.cmd run setup:appwrite
 
 ## Install the update
 
-Extract `Soils-v1.10.10-Update.zip` directly into your existing project folder, the folder that already contains `package.json` and `node_modules`, then choose **Replace All**.
+Extract `Soils-v1.10.11-Update.zip` directly into your existing project folder, the folder that already contains `package.json` and `node_modules`, then choose **Replace All**.
 
 The update ZIP intentionally excludes `.env`.
 
@@ -47,7 +54,7 @@ Verify:
 Expected:
 
 ```text
-OK: SOILS v1.10.10 is installed
+OK: SOILS v1.10.11 is installed
 ```
 
 Start:
@@ -67,7 +74,7 @@ Recommended test setup:
 - Normal Chrome window: Admin
 - Incognito window or a different Chrome profile: Farmer
 
-v1.10.10 prevents accidental reuse of the previous session when switching accounts, but separate browser contexts are still required for simultaneous two-account testing.
+v1.10.11 prevents accidental reuse of the previous session when switching accounts, but separate browser contexts are still required for simultaneous two-account testing.
 
 ## GitHub / Vercel
 
@@ -77,4 +84,4 @@ After testing locally:
 5_GITHUB_UPDATE.bat
 ```
 
-The script builds with `npm.cmd`, protects `.env`, commits v1.10.10, pushes `main`, and lets the connected Vercel project redeploy.
+The script builds with `npm.cmd`, protects `.env`, commits v1.10.11, pushes `main`, and lets the connected Vercel project redeploy.

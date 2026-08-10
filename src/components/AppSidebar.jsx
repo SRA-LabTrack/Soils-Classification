@@ -32,7 +32,7 @@ export default function AppSidebar({ role='admin', view, setView, farms=[], acti
     <div className="sidebar-bottom">
       <div className="account-mini"><div className="avatar"><UserRound size={17}/></div><div><b>{user?.name || 'User'}</b><small>{role==='admin'?'Administrator':'Farmer account'}</small></div></div>
       <button className="logout-btn" onClick={logout}><LogOut size={17}/> Sign out</button>
-      <div className="powered">Powered by <strong>Luntian</strong><small className="build-version">SOILS v1.10.10</small></div>
+      <div className="powered">Powered by <strong>Luntian</strong><small className="build-version">SOILS v1.10.11</small></div>
     </div>
   </aside>
 }

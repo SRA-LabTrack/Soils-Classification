@@ -624,23 +624,40 @@ export default function DashboardPage({ mode='admin' }) {
     // preview into the page. Directory clicks only set focusTarget; the preview
     // opens after the actual pin/coverage is clicked.
     if(nextView==='sensors' && previous!=='sensors') clearSpatialSelection();
-    // Farmer My Farm is a true "go to my boundary" action. Clear any sensor/plot
-    // focus first, then force Leaflet to fit the current authoritative boundary,
-    // even when My Farm is clicked repeatedly.
+
+    // My Farm is a navigation command, not just a tab switch. Use the boundary
+    // already in memory immediately so the map moves without waiting on the API.
+    // Then refresh the authoritative Farmer workspace in the background and fit
+    // again only if newer boundary data arrives. This also works when My Farm is
+    // clicked repeatedly while already on the farm page.
     if(!isAdmin && nextView==='farm'){
       clearSpatialSelection();
+      const immediateFarmId=activeFarmId||bundle?.farm?.id||farms[0]?.id||null;
+      if(immediateFarmId) setActiveFarmId(immediateFarmId);
+      setView('farm');
+      setFarmFitRevision(v=>v+1);
+
       const seq=++farmerSyncSeqRef.current;
       getFarmerWorkspace().then(workspace=>{
         if(seq!==farmerSyncSeqRef.current)return;
         const next=workspace?.bundle;
-        setActiveFarmId(workspace?.farmId||null);setBundle(next);setFarms(next?.farm?[next.farm]:[]);setAllSensors(next?.sensors||[]);setAllPlots(next?.plots||[]);setAllDrone(next?.droneMappings||[]);setMapRevision(v=>v+1);
+        const nextFarmId=workspace?.farmId||next?.farm?.id||immediateFarmId;
+        setActiveFarmId(nextFarmId||null);
+        setBundle(next);
+        setFarms(next?.farm?[next.farm]:[]);
+        setAllSensors(next?.sensors||[]);
+        setAllPlots(next?.plots||[]);
+        setAllDrone(next?.droneMappings||[]);
+        setMapRevision(v=>v+1);
         setFarmFitRevision(v=>v+1);
       }).catch(err=>setNotice(err.message||'Unable to refresh the Farmer workspace.'));
+      return;
     }
+
     setView(nextView);
   };
 
-  return <div className="app-shell"><AppSidebar role={mode} view={view} setView={navigateView} farms={farms} activeFarmId={activeFarmId} openFarm={openFarm} user={user} logout={logout}/><main className="main-content">{notice&&<div className="notice-bar"><span>{notice}</span><button onClick={()=>setNotice('')}>×</button></div>}{loading?<div className="loading-screen"><div className="loader"/><b>Loading soil workspace…</b><span>Preparing maps and soil layers</span></div>:<div key={`${mode}-${view}-${activeFarmId||'global'}`} className="view-stage">
+  return <div className="app-shell sharp-layout"><AppSidebar role={mode} view={view} setView={navigateView} farms={farms} activeFarmId={activeFarmId} openFarm={openFarm} user={user} logout={logout}/><main className="main-content">{notice&&<div className="notice-bar"><span>{notice}</span><button onClick={()=>setNotice('')}>×</button></div>}{loading?<div className="loading-screen"><div className="loader"/><b>Loading soil workspace…</b><span>Preparing maps and soil layers</span></div>:<div key={`${mode}-${view}-${activeFarmId||'global'}`} className="view-stage">
     {view==='overview' && isAdmin && <AdminOverview farms={farms} sensors={sensorGlobal} plots={plotGlobal} drone={droneGlobal} activeFarmId={activeFarmId} openFarm={openFarm} online={online} toolbar={farmToolbar} drawProps={{drawMode,drawPoints,onMapPoint:mapPoint,drawOrientation:placementOrientation,onDrawOrientation:setPlacementOrientation}} selectSensor={selectSensor} onPlot={selectPlot} onDrone={selectDrone} selectedSensor={selectedSensor} selectedPlot={selectedPlot} selectedDrone={selectedDrone} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSaveSensor={saveSensor} onDeleteSensor={deleteSensor} onSaveDrone={saveDrone} onDeleteDrone={deleteDrone} farmNameMap={farmNameMap} busy={busy} onAddFarmer={()=>setModal('farmer')} mapRevision={mapRevision} preview={previewFor(selectedSensor?.farm_name||selectedPlot?.farm_name||selectedDrone?.farm_name||current?.name)}/>} 
     {view==='statistics' && isAdmin && <Statistics farms={farms} sensors={allSensors} plots={allPlots} drone={allDrone} activeFarmId={activeFarmId}/>} 
     {view==='sensors' && <SensorPage admin={isAdmin} farms={farms} sensors={isAdmin?sensorGlobal:sensors} plots={isAdmin?plotGlobal:plots} drone={isAdmin?droneGlobal:droneMappings} activeFarmId={activeFarmId} selectedSensor={selectedSensor} selectedPlot={selectedPlot} selectedDrone={selectedDrone} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onLocate={locateSensor} onSelect={s=>selectSensor(s,false)} onPlot={selectPlot} onDrone={selectDrone} onSave={saveSensor} onDelete={deleteSensor} onSaveDrone={saveDrone} onDeleteDrone={deleteDrone} busy={busy} mapRevision={mapRevision} preview={previewFor(selectedSensor?.farm_name||selectedPlot?.farm_name||selectedDrone?.farm_name||current?.name)}/>} 

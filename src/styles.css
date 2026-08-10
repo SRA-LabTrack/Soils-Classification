@@ -725,3 +725,153 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .soil-map .leaflet-overlay-pane path,
 .soil-map .leaflet-overlay-pane svg,
 .soil-map .leaflet-marker-pane>*{transition:none!important}
+
+/* v1.10.11 — sharp structural geometry + fuller dashboard composition
+   Keep glass depth, gradients and motion. Only structural surfaces are squared;
+   semantic dots/pills/icons may remain circular where their meaning depends on it. */
+.sharp-layout .main-content{
+  padding:24px 24px 34px;
+  background:
+    radial-gradient(circle at 88% -4%,rgba(128,226,155,.32),transparent 30%),
+    radial-gradient(circle at 18% 18%,rgba(214,248,224,.90),transparent 24%),
+    radial-gradient(circle at 70% 68%,rgba(181,235,197,.32),transparent 28%),
+    linear-gradient(135deg,#fbfffc 0%,#f1fbf4 43%,#e9f8ee 100%);
+}
+.sharp-layout .view-stage{
+  width:100%;
+  min-height:calc(100vh - 58px);
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+}
+.sharp-layout .view-stage>*{width:100%;min-width:0}
+.sharp-layout .metric-grid,
+.sharp-layout .dashboard-grid,
+.sharp-layout .sensor-page-grid{gap:10px}
+.sharp-layout .metric-grid{align-items:stretch}
+.sharp-layout .metric-card{height:100%;min-height:116px}
+.sharp-layout .dashboard-grid{align-items:stretch}
+.sharp-layout .dashboard-grid.equal{grid-auto-rows:1fr}
+.sharp-layout .dashboard-grid.equal>.panel,
+.sharp-layout .sensor-page-grid>.panel,
+.sharp-layout .sensor-map-stack>.panel{height:100%}
+.sharp-layout .map-with-inspector{margin-bottom:10px}
+.sharp-layout .farm-heading{margin:-10px 0 10px}
+.sharp-layout .overview-farmer-strip{margin-bottom:10px}
+
+/* Structural surfaces: deliberately square, with layered depth so the UI does not feel flat. */
+.sharp-layout .panel,
+.sharp-layout .metric-card,
+.sharp-layout .map-workspace,
+.sharp-layout .map-workspace-head,
+.sharp-layout .map-edit-toolbar,
+.sharp-layout .map-editor-side .map-edit-toolbar,
+.sharp-layout .map-canvas-shell,
+.sharp-layout .soil-map,
+.sharp-layout .sensor-directory,
+.sharp-layout .sensor-cards>button,
+.sharp-layout .sensor-list article,
+.sharp-layout .plot-list article,
+.sharp-layout .farm-table button,
+.sharp-layout .farmer-spatial-preview,
+.sharp-layout .record-preview-card,
+.sharp-layout .sensor-inspector,
+.sharp-layout .modal-card,
+.sharp-layout .portal-modal-card,
+.sharp-layout .visibility-popover,
+.sharp-layout .map-mode-tabs,
+.sharp-layout .map-mode-tabs button,
+.sharp-layout .nav-item,
+.sharp-layout .farmer-item,
+.sharp-layout .logout-btn,
+.sharp-layout .primary-btn,
+.sharp-layout .danger-btn,
+.sharp-layout .icon-danger,
+.sharp-layout .toolbar-actions button,
+.sharp-layout .farm-stat-select,
+.sharp-layout .notice-bar{
+  border-radius:0!important;
+}
+
+.sharp-layout .panel,
+.sharp-layout .metric-card,
+.sharp-layout .map-workspace,
+.sharp-layout .record-preview-card,
+.sharp-layout .farmer-spatial-preview{
+  border-color:rgba(181,218,190,.82)!important;
+  background:
+    linear-gradient(115deg,rgba(255,255,255,.92) 0%,rgba(249,255,251,.78) 34%,rgba(230,248,236,.74) 100%)!important;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.98),
+    inset 1px 0 rgba(255,255,255,.55),
+    0 12px 26px rgba(27,86,46,.09),
+    0 2px 5px rgba(34,105,57,.06)!important;
+}
+.sharp-layout .panel::before{
+  left:0!important;
+  right:0!important;
+  height:2px!important;
+  background:linear-gradient(90deg,rgba(45,169,82,.64),rgba(255,255,255,.95) 42%,rgba(103,213,135,.38),transparent)!important;
+}
+.sharp-layout .panel::after,
+.sharp-layout .metric-card::after{
+  content:"";
+  position:absolute;
+  pointer-events:none;
+  inset:0 auto 0 0;
+  width:2px;
+  height:auto;
+  background:linear-gradient(180deg,rgba(40,164,76,.58),rgba(40,164,76,.08) 58%,transparent);
+  transform:none;
+}
+.sharp-layout .metric-card::before{
+  background:
+    linear-gradient(100deg,rgba(255,255,255,.40),transparent 44%),
+    radial-gradient(circle at 92% 10%,rgba(69,198,106,.16),transparent 32%)!important;
+}
+.sharp-layout .panel:hover,
+.sharp-layout .metric-card:hover{
+  transform:translateY(-2px);
+  border-color:rgba(142,203,158,.92)!important;
+  box-shadow:
+    inset 0 1px rgba(255,255,255,1),
+    inset 1px 0 rgba(255,255,255,.64),
+    0 18px 38px rgba(24,92,48,.13),
+    0 3px 8px rgba(30,99,51,.07)!important;
+}
+.sharp-layout .map-canvas-shell{
+  overflow:hidden;
+  border:1px solid rgba(181,218,190,.76);
+  box-shadow:inset 0 1px rgba(255,255,255,.86),0 10px 24px rgba(28,86,47,.08);
+}
+.sharp-layout .map-workspace-body.has-admin-editor{gap:10px}
+.sharp-layout .map-editor-side .map-edit-toolbar{
+  background:linear-gradient(155deg,rgba(255,255,255,.94),rgba(229,248,235,.82))!important;
+  box-shadow:inset 0 1px white,0 12px 28px rgba(31,94,51,.10)!important;
+}
+.sharp-layout .sensor-cards>button,
+.sharp-layout .sensor-list article,
+.sharp-layout .plot-list article,
+.sharp-layout .farm-table button{
+  background:linear-gradient(100deg,rgba(255,255,255,.74),rgba(239,250,243,.58));
+  border-color:rgba(200,226,207,.86)!important;
+  box-shadow:inset 0 1px rgba(255,255,255,.92);
+}
+.sharp-layout .sensor-cards>button:hover,
+.sharp-layout .sensor-list article:hover,
+.sharp-layout .plot-list article:hover,
+.sharp-layout .farm-table button:hover{
+  background:linear-gradient(100deg,rgba(237,250,241,.94),rgba(255,255,255,.86));
+  box-shadow:0 8px 18px rgba(30,92,48,.08),inset 0 1px white;
+}
+
+/* Keep the layout dense but breathable on wide screens; stack cleanly on mobile. */
+@media(min-width:1101px){
+  .sharp-layout .metric-grid.five{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .sharp-layout .dashboard-grid.equal{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sharp-layout .sensor-page-grid{grid-template-columns:minmax(300px,340px) minmax(0,1fr)}
+}
+@media(max-width:850px){
+  .sharp-layout .main-content{padding:18px 14px 26px}
+  .sharp-layout .view-stage{min-height:0}
+}
