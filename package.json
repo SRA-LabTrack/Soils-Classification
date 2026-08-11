@@ -1,0 +1,32 @@
+{
+  "name": "soils-classification",
+  "private": true,
+  "version": "1.10.27",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "setup:appwrite": "node scripts/setup-appwrite.mjs",
+    "reset:pins": "node scripts/reset-pins.mjs"
+  },
+  "dependencies": {
+    "appwrite": "26.2.0",
+    "leaflet": "1.9.4",
+    "lucide-react": "1.27.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-is": "19.2.8",
+    "react-leaflet": "5.0.0",
+    "react-router-dom": "7.18.1",
+    "recharts": "3.10.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.0.4",
+    "dotenv": "17.4.2",
+    "vite": "8.1.5"
+  }
+}

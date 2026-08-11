@@ -1,0 +1,48 @@
+SOILS v1.10.27 OVERHAUL
+
+SOILS v1.10.27 REQUEST DELIVERY HOTFIX
+
+- Farmer placement submission no longer waits for Support Chat to succeed. The spatial_requests row is saved first and is authoritative.
+- Admin Support Inbox reads pending spatial_requests directly, so a request remains clickable even if support_messages is missing, partially migrated, or temporarily slow.
+- Support request notifications use a short best-effort timeout and legacy support_messages schemas fall back without request-link columns.
+- Farmer request retries are idempotent through a stable client_request_id, preventing duplicate approvals after a timeout/retry.
+- Farmer request API/Appwrite calls now have explicit timeouts instead of leaving the modal stuck on Saving forever.
+- Admin Realtime listens to both support_messages and spatial_requests independently.
+- Farmer request modal now says FARMER REQUEST instead of ADMIN CONTROL.
+
+SOILS v1.10.27 FARMER REQUEST WORKFLOW
+
+- Farmer can request Sensor, Soil Plot, or Drone Mapping placements from the farm map.
+- Requests accept plotted map points or GPS coordinates and must stay inside the approved Farm Boundary.
+- Pending requests are separate from published spatial records and do not affect Statistics.
+- Every request creates a clickable Admin Support Inbox message.
+- Admin can open the request from any section, fly to its exact point/polygon, and Approve or Reject.
+- Approval publishes the requested spatial record; rejection leaves published map data untouched.
+- Farmer receives submission and decision messages through Support Chat.
+- Run npm.cmd run setup:appwrite once after upgrading to create spatial_requests and support request-link columns.
+
+
+Merged into this full build:
+- v1.10.24 Support Inbox layout hotfix
+- v1.10.24 Admin header/layout hotfix
+- v1.10.23 drag/smooth focus + stale delete hotfixes
+- ghost/orphan Soil Plot protections
+- cycle-and-focus navigation for Farm/Sensor/Soil Plot/Drone Mapping
+- multi-boundary farms and selective boundary deletion
+- Admin -> Farmer authoritative sync and shared Support Chat
+
+CLEAN SPATIAL GENERATION
+The active Sensor / Soil Plot / Drone Mapping workspace starts clean on BOTH Admin and Farmer.
+Rows created before 2026-08-11 14:08 UTC+8 are archived out of all active read paths.
+Farm boundaries, accounts, profiles and support conversations are preserved.
+The browser cache/offline generation was also bumped so older cached pins cannot return.
+
+RUN
+npm.cmd install
+npm.cmd run dev
+
+OPTIONAL PHYSICAL APPWRITE CLEANUP
+If you also want the archived old rows physically deleted from Appwrite and APPWRITE_API_KEY is configured:
+npm.cmd run reset:pins
+
+That reset command is intentionally MANUAL. It is never run automatically, so extracting or restarting this build cannot delete new pins created later.
