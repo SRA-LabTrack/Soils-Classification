@@ -1287,3 +1287,27 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* v1.10.31 request approval diagnostics */
 .request-review-error{display:flex;align-items:flex-start;gap:8px;margin:10px 0;padding:9px 10px;border:1px solid rgba(172,48,48,.35);background:rgba(255,245,245,.9);color:#8a2929;font-size:12px;line-height:1.35}.request-review-error svg{flex:0 0 auto;margin-top:1px}
+
+/* v1.10.31 Soil Plot focus + map navigator stability patch.
+   Keep the draggable navigator visually locked while Leaflet redirects the map. */
+.sharp-layout .map-section-overlay{
+  transition:none!important;
+}
+.sharp-layout .map-section-overlay .overview-map-control:not(.is-collapsed) .overview-map-control-head{
+  min-height:76px;
+}
+.sharp-layout .map-section-overlay .overview-map-control:not(.is-collapsed) .overview-focus-copy{
+  min-height:62px;
+}
+.sharp-layout .map-section-overlay .section-transition-in{
+  animation:none!important;
+}
+.sharp-layout .map-section-overlay .map-cycle-progress{
+  min-height:14px;
+}
+.sharp-layout .map-section-overlay .map-cycle-progress.is-placeholder{
+  visibility:hidden;
+}
+.sharp-layout .map-section-overlay .map-cycle-control .overview-section-switcher button:active{
+  transform:none!important;
+}

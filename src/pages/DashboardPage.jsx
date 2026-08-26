@@ -151,7 +151,7 @@ function mapSectionTargets({farms=[],sensors=[],plots=[],drone=[]}={}){
   return {
     farms:farmTargets,
     sensors:sensors.map(row=>{const id=row.id||row.$id;return {kind:'sensor',id:`sensor-${id}`,row:{...row,id},title:row.sensor_code||'Sensor',meta:`${row.farm_name||'Farm'} • ${coordText(row)}`,value:row.status||'Online'};}),
-    plots:plots.map(row=>{const id=row.id||row.$id;return {kind:'plot',id:`plot-${id}`,row:{...row,id},boundary:row.boundary||[],title:row.plot_code||'Soil Plot',meta:`${row.farm_name||'Farm'} • ${row.classification||'Pending'}`,value:`pH ${number(row.ph,2)}`};}),
+    plots:plots.map(row=>{const id=row.id||row.$id;return {kind:'plot',id:`plot-${id}`,row:{...row,id},boundary:cleanPolygon(row.boundary||[]),title:row.plot_code||'Soil Plot',meta:`${row.farm_name||'Farm'} • ${row.classification||'Pending'}`,value:`pH ${number(row.ph,2)}`};}),
     drone:drone.map(row=>{const id=row.id||row.$id;return {kind:'drone',id:`drone-${id}`,row:{...row,id},boundary:row.boundary||[],title:row.name||'Drone Mapping',meta:`${row.farm_name||'Farm'} • ${row.classification||row.status||'Mapped'}`,value:`${number(row.area_hectares,2)} ha`};}),
   };
 }
@@ -249,7 +249,7 @@ function MapSectionCycleControl({farms=[],sensors=[],plots=[],drone=[],section='
     {collapsed
       ?<button type="button" className="overview-map-control-collapsed" onClick={()=>onCollapsedChange?.(false)} aria-label="Expand map record navigator"><span><small>{meta.eyebrow}</small><b>{meta.title}</b></span><ChevronRight size={15}/></button>
       :<>
-        <div className="overview-map-control-head"><div key={`map-cycle-${section}`} className="overview-focus-copy section-transition-in"><span>{meta.eyebrow}</span><h3>{meta.title}</h3><p>{meta.copy}</p>{currentTotal>0&&currentIndex>=0&&<small className="map-cycle-progress">Viewing {currentIndex+1} of {currentTotal}</small>}</div><button type="button" className="overview-map-collapse-btn" onClick={()=>onCollapsedChange?.(true)} aria-label="Collapse map record navigator"><ChevronLeft size={15}/></button></div>
+        <div className="overview-map-control-head"><div className="overview-focus-copy"><span>{meta.eyebrow}</span><h3>{meta.title}</h3><p>{meta.copy}</p>{currentTotal>0&&<small className={`map-cycle-progress ${currentIndex<0?'is-placeholder':''}`}>{currentIndex>=0?`Viewing ${currentIndex+1} of ${currentTotal}`:'Viewing 0 of 0'}</small>}</div><button type="button" className="overview-map-collapse-btn" onClick={()=>onCollapsedChange?.(true)} aria-label="Collapse map record navigator"><ChevronLeft size={15}/></button></div>
         <div className="overview-map-control-body"><div className="overview-section-switcher" aria-label="Map record sections">{options.map(item=><button type="button" key={item.id} className={section===item.id?'active':''} onClick={()=>activate(item.id)} title={`Focus ${item.label}. Click again for the next record.`}><span>{item.label}</span><b>{item.value}</b></button>)}</div><SourceDropdown title="View section sources" items={sources}/></div>
       </>}
   </div>;
@@ -1044,6 +1044,8 @@ export default function DashboardPage({ mode='admin' }) {
       if(boundary.length){const stats=polygonStats(boundary);latitude=stats.center_lat;longitude=stats.center_lng;}
     }
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude))return false;
+    // Section cycling is navigation, not preview selection. Keep the inspector
+    // closed while the camera moves; SoilMap highlights focusTarget directly.
     clearSpatialSelection();
     if(farmId)setActiveFarmId(farmId);
     setFocusTarget({...row,id:focusId,farm_id:farmId||row.farm_id,latitude,longitude,boundary,focus_kind:kind,focus_seq:++focusRequestRef.current});

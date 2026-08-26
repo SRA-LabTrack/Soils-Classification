@@ -3,6 +3,69 @@ import { MapContainer, TileLayer, Polygon, Polyline, Rectangle, CircleMarker, Po
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// Leaflet fits bounds against the full map rectangle, but SOILS places the
+// section navigator/editor on top of that rectangle. Measure the controls that
+// are actually visible so focused polygons land in the unobstructed map area.
+function focusSafePadding(map) {
+  const container=map?.getContainer?.();
+  const shell=container?.closest?.('.map-canvas-shell');
+  if(!container||!shell){
+    return {paddingTopLeft:L.point(52,52),paddingBottomRight:L.point(52,52)};
+  }
+
+  const mapRect=container.getBoundingClientRect();
+  let left=52,right=52,top=52,bottom=52;
+  const overlays=shell.querySelectorAll('.map-section-overlay, .map-editor-overlay, .map-overlay-head, .map-preview-float');
+
+  for(const node of overlays){
+    if(!(node instanceof HTMLElement))continue;
+    const style=getComputedStyle(node);
+    if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)===0)continue;
+    const r=node.getBoundingClientRect();
+    if(r.width<4||r.height<4)continue;
+    if(r.right<=mapRect.left||r.left>=mapRect.right||r.bottom<=mapRect.top||r.top>=mapRect.bottom)continue;
+
+    const cx=(r.left+r.right)/2;
+    const cy=(r.top+r.bottom)/2;
+    const mx=(mapRect.left+mapRect.right)/2;
+    const my=(mapRect.top+mapRect.bottom)/2;
+
+    // Tall overlays are side obstructions. This also works after the user drags
+    // the section navigator from the left to the right side of the map.
+    if(r.height>=90){
+      if(cx<=mx)left=Math.max(left,r.right-mapRect.left+24);
+      else right=Math.max(right,mapRect.right-r.left+24);
+    }
+
+    // Only genuinely shallow/wide controls reserve vertical space. Do not let
+    // the 316px section navigator count as both a left AND top obstruction.
+    const wideShallow=r.width>=180 && (r.height<=86 || r.width>=r.height*2.2);
+    if(wideShallow){
+      if(cy<=my)top=Math.max(top,r.bottom-mapRect.top+18);
+      else bottom=Math.max(bottom,mapRect.bottom-r.top+18);
+    }
+  }
+
+  // Keep a real viewport even if several floating controls are open at once.
+  const maxHorizontal=Math.max(0,mapRect.width-220);
+  const horizontal=left+right;
+  if(horizontal>maxHorizontal&&horizontal>0){
+    const scale=maxHorizontal/horizontal;
+    left*=scale;right*=scale;
+  }
+  const maxVertical=Math.max(0,mapRect.height-180);
+  const vertical=top+bottom;
+  if(vertical>maxVertical&&vertical>0){
+    const scale=maxVertical/vertical;
+    top*=scale;bottom*=scale;
+  }
+
+  return {
+    paddingTopLeft:L.point(Math.round(left),Math.round(top)),
+    paddingBottomRight:L.point(Math.round(right),Math.round(bottom)),
+  };
+}
+
 function FitToData({ farms, selectedFarmId, focusTarget, drawing, fitRequestKey=0, fitBoundaryIndex=null }) {
   const map = useMap();
   const lastFitKey = useRef(null);
@@ -17,17 +80,36 @@ function FitToData({ farms, selectedFarmId, focusTarget, drawing, fitRequestKey=
         lastFocusKey.current = focusKey;
         map.stop();
         map.closePopup();
-        map.invalidateSize({pan:false});
         const focusBoundary=sanitizeBoundary(focusTarget?.boundary||[]);
-        if(focusBoundary.length>=3){
-          map.flyToBounds(L.latLngBounds(focusBoundary),{padding:[54,54],maxZoom:18,animate:true,duration:.82,easeLinearity:.14});
-        }else{
-          map.flyTo(
-            [Number(focusTarget.latitude), Number(focusTarget.longitude)],
-            Math.max(map.getZoom(), 18),
-            { animate:true, duration:.72, easeLinearity:.14, noMoveStart:false },
-          );
-        }
+
+        // Section changes can alter which glass controls are visible. Measure on
+        // the next frame, after React has committed the section, then fly once.
+        // This prevents Soil Plot focus from first jumping under the navigator
+        // and then correcting itself on Admin/Farmer maps.
+        const frame=requestAnimationFrame(()=>{
+          map.invalidateSize({pan:false});
+          const safe=focusSafePadding(map);
+
+          if(focusBoundary.length>=3){
+            const bounds=L.latLngBounds(focusBoundary);
+            if(bounds.isValid()){
+              map.flyToBounds(bounds,{
+                ...safe,
+                maxZoom:focusTarget?.focus_kind==='plot'?19:18,
+                animate:true,
+                duration:.88,
+                easeLinearity:.13,
+              });
+            }
+            return;
+          }
+
+          const lat=Number(focusTarget.latitude);
+          const lng=Number(focusTarget.longitude);
+          if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+          map.flyTo([lat,lng],Math.max(map.getZoom(),18),{animate:true,duration:.78,easeLinearity:.13,noMoveStart:false});
+        });
+        return ()=>cancelAnimationFrame(frame);
       }
       return undefined;
     }
@@ -362,7 +444,7 @@ export default function SoilMap({
         const popup=<NutrientPopup title={p.plot_code} subtitle="Soil analysis plot" row={p} footer={`${p.classification || 'Pending'} • ${p.analyzed_at ? new Date(p.analyzed_at).toLocaleDateString() : 'Not analyzed'}`}/>;
         const boundary=sanitizeBoundary(p.boundary);
         const validBoundary=isSimpleBoundary(boundary);
-        const selected=p.id===selectedPlotId;
+        const selected=p.id===selectedPlotId || (focusTarget?.focus_kind==='plot' && String(focusTarget?.id||'')===String(p.id));
         const shape=validBoundary
           ? <Polygon className="animated-map-shape" positions={boundary} pathOptions={{color:selected?'#9b7200':'#cf9c19',weight:selected?3:2,fillColor:'#f2c84b',fillOpacity:selected ? .30 : .18}} interactive={!drawMode} bubblingMouseEvents={false} eventHandlers={{click:mapClick((row)=>!drawMode&&onPlotClick?.(row),p)}}><Tooltip sticky>{p.plot_code} • N {fmt(p.nitrogen,0)} • pH {fmt(p.ph,2)}</Tooltip>{showMapPopups && <Popup>{popup}</Popup>}</Polygon>
           : (!p.boundary?.length ? <Rectangle className="animated-map-shape" bounds={squareBounds(Number(p.latitude),Number(p.longitude),Number(p.coverage_m)||70)} pathOptions={{color:selected?'#9b7200':'#cf9c19',weight:selected?3:2,fillColor:'#f2c84b',fillOpacity:selected ? .28 : .19}} interactive={!drawMode} bubblingMouseEvents={false} eventHandlers={{click:mapClick((row)=>!drawMode&&onPlotClick?.(row),p)}}><Tooltip sticky>{p.plot_code} • N {fmt(p.nitrogen,0)} • pH {fmt(p.ph,2)}</Tooltip>{showMapPopups && <Popup>{popup}</Popup>}</Rectangle> : null);

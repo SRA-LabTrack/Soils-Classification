@@ -26,20 +26,37 @@ function soilsLocalApi(){
         try{
           const auth=req.headers.authorization||'';
           const jwt=auth.startsWith('Bearer ')?auth.slice(7):'';
-          if(url==='/api/health') return json(res,200,{ok:true,service:'SOILS integrated API',version:'1.10.31'});
+
+          if(url==='/api/health'){
+            return json(res,200,{ok:true,service:'SOILS integrated API',version:'1.10.31'});
+          }
+
           if(url==='/api/farmer' && (req.method==='GET'||req.method==='POST')){
             const body=req.method==='POST'?await readBody(req):{};
-            const data=await handleFarmerAction({jwt,action:body.action||'getWorkspace',payload:body.payload||{}});
+            const data=await handleFarmerAction({
+              jwt,
+              action:body.action||'getWorkspace',
+              payload:body.payload||{}
+            });
             return json(res,200,{ok:true,data});
           }
+
           if(url==='/api/admin' && req.method==='POST'){
             const body=await readBody(req);
-            const data=await handleAdminAction({jwt,action:body.action,payload:body.payload||{}});
+            const data=await handleAdminAction({
+              jwt,
+              action:body.action,
+              payload:body.payload||{}
+            });
             return json(res,200,{ok:true,data});
           }
+
           return json(res,404,{ok:false,error:'SOILS API route not found'});
         }catch(err){
-          return json(res,err?.status||500,{ok:false,error:err?.message||'SOILS API request failed'});
+          return json(res,err?.status||500,{
+            ok:false,
+            error:err?.message||'SOILS API request failed'
+          });
         }
       });
     },
@@ -48,5 +65,20 @@ function soilsLocalApi(){
 
 export default defineConfig({
   plugins:[react(),soilsLocalApi()],
-  server:{port:5173,host:'localhost'},
+
+  resolve:{
+    dedupe:['react','react-dom','react-router','react-router-dom'],
+  },
+
+  server:{
+    host:'127.0.0.1',
+    port:5173,
+    strictPort:true,
+    hmr:{
+      protocol:'ws',
+      host:'127.0.0.1',
+      port:5173,
+      clientPort:5173,
+    },
+  },
 });
