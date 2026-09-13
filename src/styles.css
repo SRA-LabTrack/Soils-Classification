@@ -1389,3 +1389,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .farm-detail-page.farmer-map-first>.farm-heading{margin:0 0 7px!important}
   .farm-detail-page.farmer-map-first>.farmer-overview-collapse{margin-bottom:9px!important}
 }
+
+/* v1.10.36 mobile map overlay reflow + scoped positions */
+.draggable-map-overlay:not(.is-dragging){transition:transform .16s ease!important}
+@media(max-width:820px){
+  .sharp-layout .map-overlay-head:not(.is-collapsed){left:7px!important;right:auto!important;max-width:calc(100% - 14px)!important;width:auto!important;overflow:visible!important}
+  .sharp-layout .map-overlay-head:not(.is-collapsed) .map-mode-tabs{max-width:min(56vw,260px)!important;overflow-x:auto!important;overflow-y:hidden!important}
+  .sharp-layout .map-overlay-head:not(.is-collapsed) .visibility-control{flex:0 0 auto!important}
+  .sharp-layout .map-section-overlay,.sharp-layout .map-editor-overlay,.sharp-layout .map-overlay-head{max-width:calc(100% - 14px)!important}
+  .draggable-map-legend{max-width:calc(100% - 12px)!important}
+}

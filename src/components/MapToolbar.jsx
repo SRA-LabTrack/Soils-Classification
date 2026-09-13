@@ -45,6 +45,7 @@ export default function MapToolbar({ drawMode, points = [], onStart, onUndo, onC
   const [collapsed,setCollapsed]=useState(true);
   const stats=useMemo(()=>previewStats(points),[points]);
   useEffect(()=>{setLat('');setLng('');setGpsError('');setCopiedKey('');if(drawMode)setCollapsed(false);},[drawMode]);
+  useEffect(()=>{const ping=()=>window.dispatchEvent(new CustomEvent('soils:map-overlay-reflow'));requestAnimationFrame(ping);const timer=window.setTimeout(ping,180);return ()=>window.clearTimeout(timer);},[collapsed,drawMode]);
 
   const applyPair=(pair)=>{
     if(!pair)return false;

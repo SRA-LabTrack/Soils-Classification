@@ -185,14 +185,14 @@ function sanitizeBoundary(points=[]) {
 
 
 function clampLegendOffset(value,min,max){return Math.min(Math.max(value,min),max);}
-function DraggableMapLegend({children}) {
+function DraggableMapLegend({children,storageKey='map'}) {
   const nodeRef=useRef(null);
   const dragRef=useRef(null);
   const [dragging,setDragging]=useState(false);
   const [offset,setOffset]=useState(()=>{
-    try{const raw=localStorage.getItem('soils:map-legend-position');const parsed=raw?JSON.parse(raw):null;return {x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};}catch{return {x:0,y:0};}
+    try{const raw=localStorage.getItem(`soils:map-legend-position:v11036:${storageKey}`);const parsed=raw?JSON.parse(raw):null;return {x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};}catch{return {x:0,y:0};}
   });
-  const persist=(next)=>{try{localStorage.setItem('soils:map-legend-position',JSON.stringify(next));}catch{}};
+  const persist=(next)=>{try{localStorage.setItem(`soils:map-legend-position:v11036:${storageKey}`,JSON.stringify(next));}catch{}};
   useEffect(()=>{
     let frame=0;
     const keepInBounds=()=>{
@@ -209,7 +209,7 @@ function DraggableMapLegend({children}) {
     };
     keepInBounds();window.addEventListener('resize',keepInBounds);
     return ()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',keepInBounds);};
-  },[]);
+  },[storageKey]);
   const beginDrag=(event)=>{
     if(event.pointerType==='mouse'&&event.button!==0)return;
     const node=nodeRef.current;const shell=node?.closest('.soil-map');if(!node||!shell)return;
@@ -428,7 +428,7 @@ export default function SoilMap({
   farms=[], sensors=[], plots=[], droneMappings=[], requests=[], height=520, selectedFarmId, onFarmClick,
   selectedSensorId, selectedPlotId, selectedDroneId, focusTarget, visibility=defaults, visibleSensorIds, visiblePlotIds,
   onSensorClick, onPlotClick, onDroneClick, onDroneDelete, canDeleteDrone=false,
-  drawMode=null, drawPoints=[], onMapPoint, drawCoverageM=50, drawOrientation=0, onDrawOrientation, showMapPopups=true, fitRequestKey=0, fitBoundaryIndex=null, dataRevision=0,
+  drawMode=null, drawPoints=[], onMapPoint, drawCoverageM=50, drawOrientation=0, onDrawOrientation, showMapPopups=true, fitRequestKey=0, fitBoundaryIndex=null, dataRevision=0, legendStorageKey='map',
 }) {
   const center = useMemo(() => {
     const f = farms.find(x => x.id === selectedFarmId) || farms[0];
@@ -563,7 +563,7 @@ export default function SoilMap({
         {drawPoints.map((point,i)=><CircleMarker key={`${point[0]}-${point[1]}-${i}`} center={point} radius={6} interactive={false} pathOptions={{color:'#fff',weight:2,fillColor:'#176338',fillOpacity:1}}><Tooltip permanent direction="top" offset={[0,-5]}>{i+1}</Tooltip></CircleMarker>)}
       </>}
     </MapContainer>
-    <DraggableMapLegend>
+    <DraggableMapLegend storageKey={legendStorageKey}>
       {v.sensors&&<span><i className="legend-sensor"/> Sensor</span>}
       {v.sensorCoverage&&<span><i className="legend-sensor"/> Coverage</span>}
       {v.soilPlots&&<span><i className="legend-plot"/> Soil analysis plot</span>}
