@@ -151,7 +151,7 @@ function mapSectionTargets({farms=[],sensors=[],plots=[],drone=[]}={}){
   return {
     farms:farmTargets,
     sensors:sensors.map(row=>{const id=row.id||row.$id;return {kind:'sensor',id:`sensor-${id}`,row:{...row,id},title:row.sensor_code||'Sensor',meta:`${row.farm_name||'Farm'} • ${coordText(row)}`,value:row.status||'Online'};}),
-    plots:plots.map(row=>{const id=row.id||row.$id;return {kind:'plot',id:`plot-${id}`,row:{...row,id},boundary:cleanPolygon(row.boundary||[]),title:row.plot_code||'Soil Plot',meta:`${row.farm_name||'Farm'} • ${row.classification||'Pending'}`,value:`pH ${number(row.ph,2)}`};}),
+    plots:plots.map(row=>{const id=row.id||row.$id;return {kind:'plot',id:`plot-${id}`,row:{...row,id},boundary:row.boundary||[],title:row.plot_code||'Soil Plot',meta:`${row.farm_name||'Farm'} • ${row.classification||'Pending'}`,value:`pH ${number(row.ph,2)}`};}),
     drone:drone.map(row=>{const id=row.id||row.$id;return {kind:'drone',id:`drone-${id}`,row:{...row,id},boundary:row.boundary||[],title:row.name||'Drone Mapping',meta:`${row.farm_name||'Farm'} • ${row.classification||row.status||'Mapped'}`,value:`${number(row.area_hectares,2)} ha`};}),
   };
 }
@@ -183,7 +183,7 @@ function DraggableMapOverlay({className='',storageKey='map-overlay',children}){
     return ()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',keepInBounds);};
   },[storageKey]);
   const beginDrag=(event)=>{
-    if(event.button!==0)return;
+    if(event.pointerType==='mouse' && event.button!==0)return;
     const node=nodeRef.current;const shell=node?.closest('.map-canvas-shell');
     if(!node||!shell)return;
     event.preventDefault();event.stopPropagation();
@@ -249,7 +249,7 @@ function MapSectionCycleControl({farms=[],sensors=[],plots=[],drone=[],section='
     {collapsed
       ?<button type="button" className="overview-map-control-collapsed" onClick={()=>onCollapsedChange?.(false)} aria-label="Expand map record navigator"><span><small>{meta.eyebrow}</small><b>{meta.title}</b></span><ChevronRight size={15}/></button>
       :<>
-        <div className="overview-map-control-head"><div className="overview-focus-copy"><span>{meta.eyebrow}</span><h3>{meta.title}</h3><p>{meta.copy}</p>{currentTotal>0&&<small className={`map-cycle-progress ${currentIndex<0?'is-placeholder':''}`}>{currentIndex>=0?`Viewing ${currentIndex+1} of ${currentTotal}`:'Viewing 0 of 0'}</small>}</div><button type="button" className="overview-map-collapse-btn" onClick={()=>onCollapsedChange?.(true)} aria-label="Collapse map record navigator"><ChevronLeft size={15}/></button></div>
+        <div className="overview-map-control-head"><div key={`map-cycle-${section}`} className="overview-focus-copy section-transition-in"><span>{meta.eyebrow}</span><h3>{meta.title}</h3><p>{meta.copy}</p>{currentTotal>0&&currentIndex>=0&&<small className="map-cycle-progress">Viewing {currentIndex+1} of {currentTotal}</small>}</div><button type="button" className="overview-map-collapse-btn" onClick={()=>onCollapsedChange?.(true)} aria-label="Collapse map record navigator"><ChevronLeft size={15}/></button></div>
         <div className="overview-map-control-body"><div className="overview-section-switcher" aria-label="Map record sections">{options.map(item=><button type="button" key={item.id} className={section===item.id?'active':''} onClick={()=>activate(item.id)} title={`Focus ${item.label}. Click again for the next record.`}><span>{item.label}</span><b>{item.value}</b></button>)}</div><SourceDropdown title="View section sources" items={sources}/></div>
       </>}
   </div>;
@@ -1044,9 +1044,15 @@ export default function DashboardPage({ mode='admin' }) {
       if(boundary.length){const stats=polygonStats(boundary);latitude=stats.center_lat;longitude=stats.center_lng;}
     }
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude))return false;
-    // Section cycling is navigation, not preview selection. Keep the inspector
-    // closed while the camera moves; SoilMap highlights focusTarget directly.
-    clearSpatialSelection();
+    // Section navigation is also a real selection command. Keeping the target
+    // selected makes the polygon/pin visibly highlight while the camera flies,
+    // and prevents the Soil Plot cycle from feeling like a no-op when a large
+    // floating map control happens to cover part of the polygon.
+    const recordId=row.id||row.$id||null;
+    if(kind==='sensor'){setSelectedSensorId(recordId);setSelectedPlotId(null);setSelectedDroneId(null);}
+    else if(kind==='plot'){setSelectedSensorId(null);setSelectedPlotId(recordId);setSelectedDroneId(null);}
+    else if(kind==='drone'){setSelectedSensorId(null);setSelectedPlotId(null);setSelectedDroneId(recordId);}
+    else clearSpatialSelection();
     if(farmId)setActiveFarmId(farmId);
     setFocusTarget({...row,id:focusId,farm_id:farmId||row.farm_id,latitude,longitude,boundary,focus_kind:kind,focus_seq:++focusRequestRef.current});
     if(isAdmin&&farmId&&bundle?.farm?.id!==farmId){
@@ -1378,6 +1384,10 @@ function AdminOverview({
 function FarmDetail({farm,sensors,plots,drone,requests=[],userMode,overview,admin,toolbar,drawProps,selectedSensorId,selectedPlotId,selectedDroneId,focusTarget,onSensor,onPlot,onDrone,onFocusMap,selectedSensor,selectedPlot,selectedDrone,onSaveSensor,onSaveDrone,onDeleteSensor,onDeletePlot,onDeleteDrone,onDeleteFarmer,busy,mapRevision,preview,fitRequestKey=0,fitBoundaryIndex=0}){
   const [mapSection,setMapSection]=useState('farms');
   const [mapSectionCollapsed,setMapSectionCollapsed]=useState(false);
+  const [overviewCollapsed,setOverviewCollapsed]=useState(()=>{
+    if(!userMode||!overview||typeof window==='undefined')return false;
+    return window.matchMedia?.('(max-width: 820px)')?.matches ?? false;
+  });
   useEffect(()=>{if(drawProps.drawMode)setMapSectionCollapsed(true);},[drawProps.drawMode]);
   const mapModeHint=mapSection==='plots'?'analysis':mapSection==='drone'?'drone':'farm';
   const mapSectionControl=<MapSectionCycleControl farms={[farm]} sensors={sensors} plots={plots} drone={drone} section={mapSection} onSectionChange={setMapSection} onFocus={onFocusMap} onDeletePlotSource={admin?onDeletePlot:null} collapsed={mapSectionCollapsed} onCollapsedChange={setMapSectionCollapsed}/>;
@@ -1393,8 +1403,28 @@ function FarmDetail({farm,sensors,plots,drone,requests=[],userMode,overview,admi
   return <>
     <Header title={userMode?(overview?'My Soil Overview':'My Farm'):farm.farmer_name} subtitle={`${farm.name} • ${farm.location_name || 'Farm location'} • ${boundaries.length} boundar${boundaries.length===1?'y':'ies'}`} action={admin?<button className="danger-btn header-btn" onClick={onDeleteFarmer}><Trash2 size={15}/>Delete farmer</button>:null}/>
     <div className="farm-heading"><div><StatusPill value={farm.status||'Good'}/><span>{number(farm.area_hectares,2)} hectares</span><span>{onlineSensors.length}/{sensors.length} sensors online</span>{!overview&&boundaries.length>1&&<span className="boundary-cycle-badge">Viewing Boundary {visibleBoundaryIndex+1} of {boundaries.length}</span>}{userMode&&<span className="sync-badge"><i/> Live synced</span>}</div></div>
-    <div className="metric-grid five traceable-metric-grid"><TraceableMetric icon={Leaf} label="Nitrogen" value={number(m.n,0)} suffix=" mg/kg" note="Sensor average" sources={sensorSources('nitrogen',1,' mg/kg')}/><TraceableMetric icon={TestTube2} label="Phosphorus" value={number(m.p,0)} suffix=" mg/kg" note="Sensor average" tone="blue" sources={sensorSources('phosphorus',1,' mg/kg')}/><TraceableMetric icon={Gauge} label="Potassium" value={number(m.k,0)} suffix=" mg/kg" note="Sensor average" tone="amber" sources={sensorSources('potassium',1,' mg/kg')}/><TraceableMetric icon={Activity} label="Average pH" value={number(m.ph,2)} note="Sensor average" tone="violet" sources={sensorSources('ph',2,'')}/><TraceableMetric icon={Sprout} label="Organic material" value={number(m.om,1)} suffix="%" note="Sensor average" sources={sensorSources('organic_matter',1,'%')}/></div>
-    <div className="farm-source-summary-grid"><TraceableMetric icon={LandPlot} label="Farm area" value={number(farm.area_hectares,2)} suffix=" ha" note="Farm Boundary source" sources={farmSource}/><TraceableMetric icon={RadioTower} label="Active sensors" value={onlineSensors.length} suffix={` / ${sensors.length}`} note="Farmer-owned pins" tone="blue" sources={sensorCountSources}/><TraceableMetric icon={FlaskConical} label="Soil plots" value={plots.length} note="Farmer-owned polygons" tone="amber" sources={plotSources}/><TraceableMetric icon={ScanLine} label="Drone mappings" value={drone.length} note="Farmer-owned survey areas" tone="violet" sources={droneSources}/></div>
+    {userMode&&overview
+      ?<section className={`farmer-overview-collapse ${overviewCollapsed?'is-collapsed':''}`}>
+        <button type="button" className="farmer-overview-collapse-toggle" onClick={()=>setOverviewCollapsed(v=>!v)} aria-expanded={!overviewCollapsed}>
+          <span><small>SOIL SUMMARY</small><b>{overviewCollapsed?'Show full overview':'Hide overview cards'}</b><em>{sensors.length} sensor${sensors.length===1?'':'s'} • {plots.length} plot${plots.length===1?'':'s'} • {drone.length} drone map${drone.length===1?'':'s'}</em></span>
+          <ChevronDown size={17}/>
+        </button>
+        {overviewCollapsed
+          ?<div className="farmer-overview-compact">
+            <span><small>N</small><b>{number(m.n,0)}</b><em>mg/kg</em></span>
+            <span><small>pH</small><b>{number(m.ph,2)}</b></span>
+            <span><small>Sensors</small><b>{onlineSensors.length}/{sensors.length}</b></span>
+            <span><small>Area</small><b>{number(farm.area_hectares,1)}</b><em>ha</em></span>
+          </div>
+          :<div className="farmer-overview-expanded">
+            <div className="metric-grid five traceable-metric-grid"><TraceableMetric icon={Leaf} label="Nitrogen" value={number(m.n,0)} suffix=" mg/kg" note="Sensor average" sources={sensorSources('nitrogen',1,' mg/kg')}/><TraceableMetric icon={TestTube2} label="Phosphorus" value={number(m.p,0)} suffix=" mg/kg" note="Sensor average" tone="blue" sources={sensorSources('phosphorus',1,' mg/kg')}/><TraceableMetric icon={Gauge} label="Potassium" value={number(m.k,0)} suffix=" mg/kg" note="Sensor average" tone="amber" sources={sensorSources('potassium',1,' mg/kg')}/><TraceableMetric icon={Activity} label="Average pH" value={number(m.ph,2)} note="Sensor average" tone="violet" sources={sensorSources('ph',2,'')}/><TraceableMetric icon={Sprout} label="Organic material" value={number(m.om,1)} suffix="%" note="Sensor average" sources={sensorSources('organic_matter',1,'%')}/></div>
+            <div className="farm-source-summary-grid"><TraceableMetric icon={LandPlot} label="Farm area" value={number(farm.area_hectares,2)} suffix=" ha" note="Farm Boundary source" sources={farmSource}/><TraceableMetric icon={RadioTower} label="Active sensors" value={onlineSensors.length} suffix={` / ${sensors.length}`} note="Farmer-owned pins" tone="blue" sources={sensorCountSources}/><TraceableMetric icon={FlaskConical} label="Soil plots" value={plots.length} note="Farmer-owned polygons" tone="amber" sources={plotSources}/><TraceableMetric icon={ScanLine} label="Drone mappings" value={drone.length} note="Farmer-owned survey areas" tone="violet" sources={droneSources}/></div>
+          </div>}
+      </section>
+      :<>
+        <div className="metric-grid five traceable-metric-grid"><TraceableMetric icon={Leaf} label="Nitrogen" value={number(m.n,0)} suffix=" mg/kg" note="Sensor average" sources={sensorSources('nitrogen',1,' mg/kg')}/><TraceableMetric icon={TestTube2} label="Phosphorus" value={number(m.p,0)} suffix=" mg/kg" note="Sensor average" tone="blue" sources={sensorSources('phosphorus',1,' mg/kg')}/><TraceableMetric icon={Gauge} label="Potassium" value={number(m.k,0)} suffix=" mg/kg" note="Sensor average" tone="amber" sources={sensorSources('potassium',1,' mg/kg')}/><TraceableMetric icon={Activity} label="Average pH" value={number(m.ph,2)} note="Sensor average" tone="violet" sources={sensorSources('ph',2,'')}/><TraceableMetric icon={Sprout} label="Organic material" value={number(m.om,1)} suffix="%" note="Sensor average" sources={sensorSources('organic_matter',1,'%')}/></div>
+        <div className="farm-source-summary-grid"><TraceableMetric icon={LandPlot} label="Farm area" value={number(farm.area_hectares,2)} suffix=" ha" note="Farm Boundary source" sources={farmSource}/><TraceableMetric icon={RadioTower} label="Active sensors" value={onlineSensors.length} suffix={` / ${sensors.length}`} note="Farmer-owned pins" tone="blue" sources={sensorCountSources}/><TraceableMetric icon={FlaskConical} label="Soil plots" value={plots.length} note="Farmer-owned polygons" tone="amber" sources={plotSources}/><TraceableMetric icon={ScanLine} label="Drone mappings" value={drone.length} note="Farmer-owned survey areas" tone="violet" sources={droneSources}/></div>
+      </>}
     <div className="map-with-inspector unified-map-preview-layout">
       <MapWorkspace farms={[farm]} sensors={sensors} plots={plots} droneMappings={drone} requests={requests} activeFarmId={farm.id} admin={admin} height={overview?500:610} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensor} onPlotClick={onPlot} onDroneClick={onDrone} onDroneDelete={onDeleteDrone} drawMode={drawProps.drawMode} drawPoints={drawProps.drawPoints} onMapPoint={drawProps.onMapPoint} drawOrientation={drawProps.drawOrientation} onDrawOrientation={drawProps.onDrawOrientation} toolbar={toolbar} sectionControl={mapSectionControl} modeHint={mapModeHint} showMapPopups={false} preview={preview} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={mapRevision}/>
     </div>
