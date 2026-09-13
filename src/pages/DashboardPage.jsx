@@ -378,13 +378,62 @@ function MapSectionCycleControl({farms=[],sensors=[],plots=[],drone=[],section='
   </div>;
 }
 
+function MapDisplaySelector({value,onChange,hasSection=false,hasEditor=false,editorLabel='Map editor'}){
+  const [open,setOpen]=useState(false);
+  const selectedCount=[Boolean(value?.tools),Boolean(hasEditor&&value?.editor),Boolean(hasSection&&value?.section),Boolean(value?.legend)].filter(Boolean).length;
+  const setFlag=(key,checked)=>onChange?.({...value,[key]:checked});
+  const setAll=(checked)=>onChange?.({tools:checked,editor:checked&&hasEditor,section:checked&&hasSection,legend:checked});
+  return <div className={'map-display-selector '+(open?'is-open':'')}>
+    <button type="button" className="map-display-selector-toggle" onClick={()=>setOpen(v=>!v)} aria-expanded={open}>
+      <span><small>MAP DISPLAY</small><b>{selectedCount?(selectedCount+' shown'):'None'}</b></span>
+      <ChevronDown size={15}/>
+    </button>
+    {open&&<div className="map-display-selector-menu">
+      <div className="map-display-selector-head"><div><span>MAP INTERFACE</span><b>Choose visible controls</b></div><button type="button" onClick={()=>setOpen(false)} aria-label="Close map display menu">×</button></div>
+      <div className="map-display-quick">
+        <button type="button" className={selectedCount===0?'active':''} onClick={()=>setAll(false)}>None</button>
+        <button type="button" onClick={()=>setAll(true)}>All</button>
+      </div>
+      <label><input type="checkbox" checked={Boolean(value?.tools)} onChange={e=>setFlag('tools',e.target.checked)}/><span><b>Map tools</b><small>Farm Boundary, Soil Plot, Drone Mapping and Visibility</small></span></label>
+      {hasEditor&&<label><input type="checkbox" checked={Boolean(value?.editor)} onChange={e=>setFlag('editor',e.target.checked)}/><span><b>{editorLabel}</b><small>Placement, GPS and drawing controls</small></span></label>}
+      {hasSection&&<label><input type="checkbox" checked={Boolean(value?.section)} onChange={e=>setFlag('section',e.target.checked)}/><span><b>Mapped farms</b><small>Farm Network / map record navigator</small></span></label>}
+      <label><input type="checkbox" checked={Boolean(value?.legend)} onChange={e=>setFlag('legend',e.target.checked)}/><span><b>Legend</b><small>Sensor, coverage, plot, drone and boundary keys</small></span></label>
+    </div>}
+  </div>;
+}
+
 
 function MapWorkspace({
   farms, sensors, plots, droneMappings, requests=[], activeFarmId, onFarmClick, admin=false, height=560,
   selectedSensorId, selectedPlotId, selectedDroneId, focusTarget, onSensorClick, onPlotClick, onDroneClick, onDroneDelete,
   drawMode, drawPoints, onMapPoint, drawCoverageM, drawOrientation, onDrawOrientation, toolbar, sectionControl=null, showMapPopups=true, preview=null, fitRequestKey=0, fitBoundaryIndex=null, dataRevision=0, modeHint=null, embedded=false, overlayScope='workspace',
 }) {
-  const overlayStorageScope=`${admin?'admin':'farmer'}-${overlayScope}`;
+  const overlayStorageScope=(admin?'admin':'farmer')+'-'+overlayScope;
+  const displayStorageKey='soils:map-display:v11039:'+overlayStorageScope;
+  const [mapDisplay,setMapDisplay]=useState(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem(displayStorageKey)||'null');
+      if(saved&&typeof saved==='object')return {
+        tools:Boolean(saved.tools),
+        editor:Boolean(saved.editor),
+        section:Boolean(saved.section),
+        legend:Boolean(saved.legend),
+      };
+    }catch{}
+    return {tools:false,editor:false,section:false,legend:false};
+  });
+  const updateMapDisplay=(next)=>{
+    const clean={tools:Boolean(next?.tools),editor:Boolean(next?.editor),section:Boolean(next?.section),legend:Boolean(next?.legend)};
+    setMapDisplay(clean);
+    try{localStorage.setItem(displayStorageKey,JSON.stringify(clean));}catch{}
+    requestAnimationFrame(()=>window.dispatchEvent(new CustomEvent('soils:map-overlay-reflow')));
+    window.setTimeout(()=>window.dispatchEvent(new CustomEvent('soils:map-overlay-reflow')),180);
+  };
+  const editorForcedVisible=Boolean(drawMode);
+  const showMapTools=Boolean(mapDisplay.tools);
+  const showMapEditor=Boolean(toolbar)&&(Boolean(mapDisplay.editor)||editorForcedVisible);
+  const showMapSection=Boolean(sectionControl)&&Boolean(mapDisplay.section);
+  const showMapLegend=Boolean(mapDisplay.legend);
   const [mapMode,setMapMode]=useState('farm');
   const [visibility,setVisibility]=useState(modeVisibility('farm'));
   const [visibleSensorIds,setVisibleSensorIds]=useState(sensors.map(s=>s.id));
@@ -403,13 +452,30 @@ function MapWorkspace({
   },[drawMode,selectedPlotId,selectedDroneId]);
   const sensorToggle=(id,checked)=>setVisibleSensorIds(v=>checked?[...new Set([...v,id])]:v.filter(x=>x!==id));
   const plotToggle=(id,checked)=>setVisiblePlotIds(v=>checked?[...new Set([...v,id])]:v.filter(x=>x!==id));
+
+  /* v1.10.39 display availability reflow */
+  useEffect(()=>{
+    const fire=()=>window.dispatchEvent(new CustomEvent('soils:map-overlay-reflow'));
+    const frame=requestAnimationFrame(()=>requestAnimationFrame(fire));
+    const timer=window.setTimeout(fire,160);
+    return ()=>{cancelAnimationFrame(frame);window.clearTimeout(timer);};
+  },[mapDisplay.tools,mapDisplay.editor,mapDisplay.section,mapDisplay.legend,editorForcedVisible]);
+
+  /* v1.10.38 preview-driven map overlay reflow */
+  useEffect(()=>{
+    const fire=()=>window.dispatchEvent(new CustomEvent('soils:map-overlay-reflow'));
+    const frame=requestAnimationFrame(()=>requestAnimationFrame(fire));
+    const timer=window.setTimeout(fire,220);
+    return ()=>{cancelAnimationFrame(frame);window.clearTimeout(timer);};
+  },[Boolean(preview),selectedSensorId,selectedPlotId,selectedDroneId]);
   return <section className={`${embedded?'':'panel '}map-panel map-workspace ${embedded?'is-embedded':''}`.trim()}>
     <div className={`map-workspace-body ${admin?'has-admin-editor':''}`}>
-      <div className="map-canvas-shell">
-        <SoilMap farms={farms} sensors={sensors} plots={plots} droneMappings={droneMappings} requests={requests} height={height} selectedFarmId={activeFarmId} onFarmClick={onFarmClick} visibility={visibility} visibleSensorIds={visibleSensorIds} visiblePlotIds={visiblePlotIds} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensorClick} onPlotClick={onPlotClick} onDroneClick={onDroneClick} onDroneDelete={onDroneDelete} canDeleteDrone={admin} drawMode={drawMode} drawPoints={drawPoints} onMapPoint={onMapPoint} drawCoverageM={drawCoverageM} drawOrientation={drawOrientation} onDrawOrientation={onDrawOrientation} showMapPopups={showMapPopups} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={dataRevision} legendStorageKey={`legend-${overlayStorageScope}`}/>
-        <DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${overlayStorageScope}`} collapsible collapseLabel="Map tools" defaultCollapsed={true}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>
-        {sectionControl && <DraggableMapOverlay className="map-section-overlay" storageKey={`section-${overlayStorageScope}`}>{sectionControl}</DraggableMapOverlay>}
-        {toolbar && <DraggableMapOverlay className="map-editor-side map-editor-overlay" storageKey={`editor-${overlayStorageScope}`}>{toolbar}</DraggableMapOverlay>}
+      <div className={`map-canvas-shell ${preview?'has-record-preview':''}`.trim()}>
+        <SoilMap farms={farms} sensors={sensors} plots={plots} droneMappings={droneMappings} requests={requests} height={height} selectedFarmId={activeFarmId} onFarmClick={onFarmClick} visibility={visibility} visibleSensorIds={visibleSensorIds} visiblePlotIds={visiblePlotIds} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensorClick} onPlotClick={onPlotClick} onDroneClick={onDroneClick} onDroneDelete={onDroneDelete} canDeleteDrone={admin} drawMode={drawMode} drawPoints={drawPoints} onMapPoint={onMapPoint} drawCoverageM={drawCoverageM} drawOrientation={drawOrientation} onDrawOrientation={onDrawOrientation} showMapPopups={showMapPopups} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={dataRevision} legendStorageKey={`legend-${overlayStorageScope}`} showLegend={showMapLegend}/>
+        <MapDisplaySelector value={mapDisplay} onChange={updateMapDisplay} hasSection={Boolean(sectionControl)} hasEditor={Boolean(toolbar)} editorLabel={admin?'Map editor':'Request map placement'}/>
+        {showMapTools&&<DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${overlayStorageScope}`} collapsible collapseLabel="Map tools" defaultCollapsed={true}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>}
+        {showMapSection&&<DraggableMapOverlay className="map-section-overlay" storageKey={`section-${overlayStorageScope}`}>{sectionControl}</DraggableMapOverlay>}
+        {showMapEditor&&<DraggableMapOverlay className="map-editor-side map-editor-overlay" storageKey={`editor-${overlayStorageScope}`}>{toolbar}</DraggableMapOverlay>}
         {preview&&<div className="map-preview-float">{preview}</div>}
       </div>
     </div>

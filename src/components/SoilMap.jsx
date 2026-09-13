@@ -428,7 +428,7 @@ export default function SoilMap({
   farms=[], sensors=[], plots=[], droneMappings=[], requests=[], height=520, selectedFarmId, onFarmClick,
   selectedSensorId, selectedPlotId, selectedDroneId, focusTarget, visibility=defaults, visibleSensorIds, visiblePlotIds,
   onSensorClick, onPlotClick, onDroneClick, onDroneDelete, canDeleteDrone=false,
-  drawMode=null, drawPoints=[], onMapPoint, drawCoverageM=50, drawOrientation=0, onDrawOrientation, showMapPopups=true, fitRequestKey=0, fitBoundaryIndex=null, dataRevision=0, legendStorageKey='map',
+  drawMode=null, drawPoints=[], onMapPoint, drawCoverageM=50, drawOrientation=0, onDrawOrientation, showMapPopups=true, fitRequestKey=0, fitBoundaryIndex=null, dataRevision=0, legendStorageKey='map', showLegend=true,
 }) {
   const center = useMemo(() => {
     const f = farms.find(x => x.id === selectedFarmId) || farms[0];
@@ -563,14 +563,14 @@ export default function SoilMap({
         {drawPoints.map((point,i)=><CircleMarker key={`${point[0]}-${point[1]}-${i}`} center={point} radius={6} interactive={false} pathOptions={{color:'#fff',weight:2,fillColor:'#176338',fillOpacity:1}}><Tooltip permanent direction="top" offset={[0,-5]}>{i+1}</Tooltip></CircleMarker>)}
       </>}
     </MapContainer>
-    <DraggableMapLegend storageKey={legendStorageKey}>
+    {showLegend&&<DraggableMapLegend storageKey={legendStorageKey}>
       {v.sensors&&<span><i className="legend-sensor"/> Sensor</span>}
       {v.sensorCoverage&&<span><i className="legend-sensor"/> Coverage</span>}
       {v.soilPlots&&<span><i className="legend-plot"/> Soil analysis plot</span>}
       {v.droneMapping&&<span><i className="legend-drone"/> Drone mapping</span>}
       {v.farmBoundary&&<span><i className="legend-farm"/> Farm boundary</span>}
       {requests.some(request=>String(request.status||'pending').toLowerCase()==='pending')&&<span><i className="legend-request"/> Pending request</span>}
-    </DraggableMapLegend>
+    </DraggableMapLegend>}
     {drawMode&&<div className="drawing-hint">{drawMode==='sensor'?`Drag the sensor pin to position. Then drag the ROTATE handle around it to turn the coverage square (${Number(drawOrientation||0).toFixed(0)}°).`:'Click point-by-point to trace the shape. The polygon closes automatically when saved.'}</div>}
   </div>;
 }
