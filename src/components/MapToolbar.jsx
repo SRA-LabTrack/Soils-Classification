@@ -42,7 +42,7 @@ export default function MapToolbar({ drawMode, points = [], onStart, onUndo, onC
   const [gpsBusy,setGpsBusy]=useState(false);
   const [gpsError,setGpsError]=useState('');
   const [copiedKey,setCopiedKey]=useState('');
-  const [collapsed,setCollapsed]=useState(false);
+  const [collapsed,setCollapsed]=useState(true);
   const stats=useMemo(()=>previewStats(points),[points]);
   useEffect(()=>{setLat('');setLng('');setGpsError('');setCopiedKey('');if(drawMode)setCollapsed(false);},[drawMode]);
 

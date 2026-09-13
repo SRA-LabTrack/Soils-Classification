@@ -157,44 +157,129 @@ function mapSectionTargets({farms=[],sensors=[],plots=[],drone=[]}={}){
 }
 
 function clampOverlay(value,min,max){return Math.min(Math.max(value,min),max);}
+function overlapArea(a,b,pad=7){
+  const left=Math.max(a.left,b.left-pad),right=Math.min(a.right,b.right+pad);
+  const top=Math.max(a.top,b.top-pad),bottom=Math.min(a.bottom,b.bottom+pad);
+  return Math.max(0,right-left)*Math.max(0,bottom-top);
+}
 function DraggableMapOverlay({className='',storageKey='map-overlay',children,collapsible=false,collapseLabel='Map tools',defaultCollapsed=false}){
   const nodeRef=useRef(null);
   const dragRef=useRef(null);
+  const offsetRef=useRef({x:0,y:0});
+  const arrangeFrameRef=useRef(0);
   const [dragging,setDragging]=useState(false);
   const [collapsed,setCollapsed]=useState(()=>{
     if(!collapsible)return false;
-    try{const saved=localStorage.getItem(`soils:overlay-collapsed:${storageKey}`);if(saved!==null)return saved==='1';}catch{}
+    try{const saved=localStorage.getItem(`soils:overlay-collapsed:v11034:${storageKey}`);if(saved!==null)return saved==='1';}catch{}
     return Boolean(defaultCollapsed);
   });
   const [offset,setOffset]=useState(()=>{
-    try{const raw=localStorage.getItem(`soils:overlay:${storageKey}`);const parsed=raw?JSON.parse(raw):null;return {x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};}catch{return {x:0,y:0};}
+    try{const raw=localStorage.getItem(`soils:overlay:${storageKey}`);const parsed=raw?JSON.parse(raw):null;const next={x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};offsetRef.current=next;return next;}catch{return {x:0,y:0};}
   });
   const persist=(next)=>{try{localStorage.setItem(`soils:overlay:${storageKey}`,JSON.stringify(next));}catch{}};
-  const persistCollapsed=(next)=>{try{localStorage.setItem(`soils:overlay-collapsed:${storageKey}`,next?'1':'0');}catch{}};
-  useEffect(()=>{
-    let frame=0;
-    const keepInBounds=()=>{
-      cancelAnimationFrame(frame);
-      frame=requestAnimationFrame(()=>{
-        const node=nodeRef.current;const shell=node?.closest('.map-canvas-shell');if(!node||!shell)return;
-        const rect=node.getBoundingClientRect(),bounds=shell.getBoundingClientRect();
-        let dx=0,dy=0;
-        if(rect.left<bounds.left+6)dx=(bounds.left+6)-rect.left;else if(rect.right>bounds.right-6)dx=(bounds.right-6)-rect.right;
-        if(rect.top<bounds.top+6)dy=(bounds.top+6)-rect.top;else if(rect.bottom>bounds.bottom-6)dy=(bounds.bottom-6)-rect.bottom;
-        if(!dx&&!dy)return;
-        setOffset(current=>{const next={x:current.x+dx,y:current.y+dy};persist(next);return next;});
-      });
+  const persistCollapsed=(next)=>{try{localStorage.setItem(`soils:overlay-collapsed:v11034:${storageKey}`,next?'1':'0');}catch{}};
+  const setOverlayOffset=(next,{save=false}={})=>{offsetRef.current=next;setOffset(next);if(save)persist(next);};
+
+  const arrangeWithoutOverlap=()=>{
+    const node=nodeRef.current;
+    const shell=node?.closest('.map-canvas-shell');
+    if(!node||!shell||dragRef.current)return;
+
+    const bounds=shell.getBoundingClientRect();
+    const rect=node.getBoundingClientRect();
+    if(rect.width<2||rect.height<2)return;
+
+    const padding=8;
+    const currentOffset=offsetRef.current;
+    const baseLeft=rect.left-currentOffset.x;
+    const baseTop=rect.top-currentOffset.y;
+    const width=rect.width,height=rect.height;
+    const minLeft=bounds.left+padding;
+    const maxLeft=Math.max(minLeft,bounds.right-padding-width);
+    const minTop=bounds.top+padding;
+    const maxTop=Math.max(minTop,bounds.bottom-padding-height);
+
+    const blockers=[...shell.querySelectorAll('.draggable-map-overlay,.draggable-map-legend,.map-preview-float,.leaflet-control-zoom')]
+      .filter(other=>other!==node&&other instanceof HTMLElement)
+      .map(other=>({node:other,style:getComputedStyle(other),rect:other.getBoundingClientRect()}))
+      .filter(item=>item.style.display!=='none'&&item.style.visibility!=='hidden'&&Number(item.style.opacity)!==0&&item.rect.width>3&&item.rect.height>3)
+      .map(item=>item.rect);
+
+    const makeRect=(left,top)=>({left,top,right:left+width,bottom:top+height,width,height});
+    const clampedCurrent={
+      left:clampOverlay(rect.left,minLeft,maxLeft),
+      top:clampOverlay(rect.top,minTop,maxTop),
     };
-    keepInBounds();window.addEventListener('resize',keepInBounds);
-    return ()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',keepInBounds);};
+
+    const candidates=[];
+    const add=(left,top)=>{
+      left=clampOverlay(left,minLeft,maxLeft);
+      top=clampOverlay(top,minTop,maxTop);
+      if(!candidates.some(item=>Math.abs(item.left-left)<1&&Math.abs(item.top-top)<1))candidates.push({left,top});
+    };
+
+    add(clampedCurrent.left,clampedCurrent.top);
+    add(minLeft,minTop);
+    add(maxLeft,minTop);
+    add(minLeft,maxTop);
+    add(maxLeft,maxTop);
+    add((minLeft+maxLeft)/2,minTop);
+    add((minLeft+maxLeft)/2,maxTop);
+    add(minLeft,(minTop+maxTop)/2);
+    add(maxLeft,(minTop+maxTop)/2);
+
+    const step=Math.max(28,Math.min(54,Math.round(Math.min(width,height)/2)));
+    for(let top=minTop;top<=maxTop+1;top+=step){
+      for(let left=minLeft;left<=maxLeft+1;left+=step)add(left,top);
+      add(maxLeft,top);
+    }
+
+    let best=null;
+    for(const candidate of candidates){
+      const candidateRect=makeRect(candidate.left,candidate.top);
+      const overlap=blockers.reduce((sum,blocker)=>sum+overlapArea(candidateRect,blocker,7),0);
+      const distance=Math.hypot(candidate.left-rect.left,candidate.top-rect.top);
+      const score=overlap*100000+distance;
+      if(!best||score<best.score)best={...candidate,score,overlap};
+      if(overlap===0&&distance<2){best={...candidate,score,overlap};break;}
+    }
+    if(!best)return;
+
+    const dx=best.left-rect.left,dy=best.top-rect.top;
+    if(Math.abs(dx)<1&&Math.abs(dy)<1)return;
+    const next={x:currentOffset.x+dx,y:currentOffset.y+dy};
+    setOverlayOffset(next,{save:true});
+  };
+
+  const scheduleArrange=()=>{
+    cancelAnimationFrame(arrangeFrameRef.current);
+    arrangeFrameRef.current=requestAnimationFrame(()=>requestAnimationFrame(arrangeWithoutOverlap));
+  };
+
+  useEffect(()=>{
+    const node=nodeRef.current;
+    if(!node)return undefined;
+    let observer=null;
+    if(typeof ResizeObserver!=='undefined'){
+      observer=new ResizeObserver(()=>scheduleArrange());
+      observer.observe(node);
+    }
+    scheduleArrange();
+    window.addEventListener('resize',scheduleArrange);
+    return ()=>{
+      observer?.disconnect();
+      cancelAnimationFrame(arrangeFrameRef.current);
+      window.removeEventListener('resize',scheduleArrange);
+    };
   },[storageKey,collapsed]);
+
   const beginDrag=(event)=>{
-    if(event.pointerType==='mouse' && event.button!==0)return;
+    if(event.pointerType==='mouse'&&event.button!==0)return;
     const node=nodeRef.current;const shell=node?.closest('.map-canvas-shell');
     if(!node||!shell)return;
     event.preventDefault();event.stopPropagation();
     const rect=node.getBoundingClientRect();const bounds=shell.getBoundingClientRect();
-    dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,startOffset:{...offset},rect,bounds};
+    dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,startOffset:{...offsetRef.current},rect,bounds};
     event.currentTarget.setPointerCapture?.(event.pointerId);setDragging(true);
   };
   const moveDrag=(event)=>{
@@ -207,16 +292,21 @@ function DraggableMapOverlay({className='',storageKey='map-overlay',children,col
       x:clampOverlay(drag.startOffset.x+(event.clientX-drag.startX),Math.min(minX,maxX),Math.max(minX,maxX)),
       y:clampOverlay(drag.startOffset.y+(event.clientY-drag.startY),Math.min(minY,maxY),Math.max(minY,maxY)),
     };
-    setOffset(next);
+    setOverlayOffset(next);
   };
   const endDrag=(event)=>{
     const drag=dragRef.current;if(!drag||drag.pointerId!==event.pointerId)return;
     event.preventDefault();event.stopPropagation();dragRef.current=null;setDragging(false);
-    setOffset(current=>{persist(current);return current;});
+    persist(offsetRef.current);
     try{event.currentTarget.releasePointerCapture?.(event.pointerId);}catch{}
   };
-  const resetPosition=(event)=>{event.preventDefault();event.stopPropagation();const next={x:0,y:0};setOffset(next);persist(next);};
-  const toggleCollapsed=(event)=>{event.preventDefault();event.stopPropagation();setCollapsed(current=>{const next=!current;persistCollapsed(next);return next;});};
+  const resetPosition=(event)=>{event.preventDefault();event.stopPropagation();setOverlayOffset({x:0,y:0},{save:true});scheduleArrange();};
+  const toggleCollapsed=(event)=>{
+    event.preventDefault();event.stopPropagation();
+    setCollapsed(current=>{const next=!current;persistCollapsed(next);return next;});
+    scheduleArrange();
+  };
+
   return <div ref={nodeRef} className={`${className} draggable-map-overlay ${dragging?'is-dragging':''} ${collapsed?'is-collapsed':''}`.trim()} style={{'--overlay-drag-x':`${offset.x}px`,'--overlay-drag-y':`${offset.y}px`}}>
     <button type="button" className="map-overlay-drag-handle" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onDoubleClick={resetPosition} title="Drag to move. Double-click to reset position." aria-label="Drag this map control"><span className="drag-grip-glyph" aria-hidden="true">⋮⋮</span><span>Drag</span></button>
     {!collapsed&&children}
@@ -291,7 +381,7 @@ function MapWorkspace({
     <div className={`map-workspace-body ${admin?'has-admin-editor':''}`}>
       <div className="map-canvas-shell">
         <SoilMap farms={farms} sensors={sensors} plots={plots} droneMappings={droneMappings} requests={requests} height={height} selectedFarmId={activeFarmId} onFarmClick={onFarmClick} visibility={visibility} visibleSensorIds={visibleSensorIds} visiblePlotIds={visiblePlotIds} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensorClick} onPlotClick={onPlotClick} onDroneClick={onDroneClick} onDroneDelete={onDroneDelete} canDeleteDrone={admin} drawMode={drawMode} drawPoints={drawPoints} onMapPoint={onMapPoint} drawCoverageM={drawCoverageM} drawOrientation={drawOrientation} onDrawOrientation={onDrawOrientation} showMapPopups={showMapPopups} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={dataRevision}/>
-        <DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${admin?'admin':'farmer'}`} collapsible collapseLabel="Map tools" defaultCollapsed={typeof window!=='undefined'&&window.matchMedia?.('(max-width: 820px)')?.matches}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>
+        <DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${admin?'admin':'farmer'}`} collapsible collapseLabel="Map tools" defaultCollapsed={true}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>
         {sectionControl && <DraggableMapOverlay className="map-section-overlay" storageKey={`section-${admin?'admin':'farmer'}`}>{sectionControl}</DraggableMapOverlay>}
         {toolbar && <DraggableMapOverlay className="map-editor-side map-editor-overlay" storageKey={`editor-${admin?'admin':'farmer-request'}`}>{toolbar}</DraggableMapOverlay>}
         {preview&&<div className="map-preview-float">{preview}</div>}
@@ -1391,11 +1481,8 @@ function AdminOverview({
 
 function FarmDetail({farm,sensors,plots,drone,requests=[],userMode,overview,admin,toolbar,drawProps,selectedSensorId,selectedPlotId,selectedDroneId,focusTarget,onSensor,onPlot,onDrone,onFocusMap,selectedSensor,selectedPlot,selectedDrone,onSaveSensor,onSaveDrone,onDeleteSensor,onDeletePlot,onDeleteDrone,onDeleteFarmer,busy,mapRevision,preview,fitRequestKey=0,fitBoundaryIndex=0}){
   const [mapSection,setMapSection]=useState('farms');
-  const [mapSectionCollapsed,setMapSectionCollapsed]=useState(false);
-  const [overviewCollapsed,setOverviewCollapsed]=useState(()=>{
-    if(!userMode||!overview||typeof window==='undefined')return false;
-    return window.matchMedia?.('(max-width: 820px)')?.matches ?? false;
-  });
+  const [mapSectionCollapsed,setMapSectionCollapsed]=useState(true);
+  const [overviewCollapsed,setOverviewCollapsed]=useState(()=>Boolean(userMode&&overview));
   useEffect(()=>{if(drawProps.drawMode)setMapSectionCollapsed(true);},[drawProps.drawMode]);
   const mapModeHint=mapSection==='plots'?'analysis':mapSection==='drone'?'drone':'farm';
   const mapSectionControl=<MapSectionCycleControl farms={[farm]} sensors={sensors} plots={plots} drone={drone} section={mapSection} onSectionChange={setMapSection} onFocus={onFocusMap} onDeletePlotSource={admin?onDeletePlot:null} collapsed={mapSectionCollapsed} onCollapsedChange={setMapSectionCollapsed}/>;
@@ -1408,7 +1495,7 @@ function FarmDetail({farm,sensors,plots,drone,requests=[],userMode,overview,admi
   const boundaries=farmBoundaries(farm);
   const visibleBoundaryIndex=boundaries.length?((Number(fitBoundaryIndex||0)%boundaries.length)+boundaries.length)%boundaries.length:0;
   const farmSource=boundaries.map((poly,index)=>({id:`${farm.id}-boundary-${index}`,title:`Farm Boundary ${index+1}`,meta:farm.location_name||'Mapped farm location',value:`${number(polygonStats(poly).area_hectares,2)} ha`}));
-  return <>
+  return <div className={`farm-detail-page ${userMode&&overview?'farmer-map-first':''}`}>
     <Header title={userMode?(overview?'My Soil Overview':'My Farm'):farm.farmer_name} subtitle={`${farm.name} • ${farm.location_name || 'Farm location'} • ${boundaries.length} boundar${boundaries.length===1?'y':'ies'}`} action={admin?<button className="danger-btn header-btn" onClick={onDeleteFarmer}><Trash2 size={15}/>Delete farmer</button>:null}/>
     <div className="farm-heading"><div><StatusPill value={farm.status||'Good'}/><span>{number(farm.area_hectares,2)} hectares</span><span>{onlineSensors.length}/{sensors.length} sensors online</span>{!overview&&boundaries.length>1&&<span className="boundary-cycle-badge">Viewing Boundary {visibleBoundaryIndex+1} of {boundaries.length}</span>}{userMode&&<span className="sync-badge"><i/> Live synced</span>}</div></div>
     {userMode&&overview
@@ -1437,13 +1524,13 @@ function FarmDetail({farm,sensors,plots,drone,requests=[],userMode,overview,admi
       <MapWorkspace farms={[farm]} sensors={sensors} plots={plots} droneMappings={drone} requests={requests} activeFarmId={farm.id} admin={admin} height={overview?500:610} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensor} onPlotClick={onPlot} onDroneClick={onDrone} onDroneDelete={onDeleteDrone} drawMode={drawProps.drawMode} drawPoints={drawProps.drawPoints} onMapPoint={drawProps.onMapPoint} drawOrientation={drawProps.drawOrientation} onDrawOrientation={drawProps.onDrawOrientation} toolbar={toolbar} sectionControl={mapSectionControl} modeHint={mapModeHint} showMapPopups={false} preview={preview} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={mapRevision}/>
     </div>
     <div className="dashboard-grid equal"><SensorList sensors={sensors} onSelect={onSensor} selectedId={selectedSensorId} admin={admin} onDelete={onDeleteSensor}/><PlotAndDroneList plots={plots} drone={drone} admin={admin} onPlot={onPlot} onDrone={onDrone} onDeletePlot={onDeletePlot} onDeleteDrone={onDeleteDrone}/></div>
-  </>;
+  </div>;
 }
 
 function SensorPage({admin,farms,sensors,plots,drone,activeFarmId,selectedSensor,selectedPlot,selectedDrone,selectedSensorId,selectedPlotId,selectedDroneId,focusTarget,onLocate,onSelect,onPlot,onDrone,onFocusMap,onSave,onDelete,onSaveDrone,onDeleteDrone,busy,mapRevision,preview}){
   const mapFarms=admin?farms:farms.slice(0,1);
   const [mapSection,setMapSection]=useState('sensors');
-  const [mapSectionCollapsed,setMapSectionCollapsed]=useState(false);
+  const [mapSectionCollapsed,setMapSectionCollapsed]=useState(true);
   const mapModeHint=mapSection==='plots'?'analysis':mapSection==='drone'?'drone':'farm';
   const mapSectionControl=<MapSectionCycleControl farms={mapFarms} sensors={sensors} plots={plots} drone={drone} section={mapSection} onSectionChange={setMapSection} onFocus={onFocusMap} collapsed={mapSectionCollapsed} onCollapsedChange={setMapSectionCollapsed}/>;
   const farmName=selectedSensor?.farm_name || mapFarms.find(f=>f.id===(selectedSensor?.farm_id||selectedPlot?.farm_id||selectedDrone?.farm_id||activeFarmId))?.name || mapFarms[0]?.name;
