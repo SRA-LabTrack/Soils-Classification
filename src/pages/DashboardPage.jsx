@@ -157,14 +157,20 @@ function mapSectionTargets({farms=[],sensors=[],plots=[],drone=[]}={}){
 }
 
 function clampOverlay(value,min,max){return Math.min(Math.max(value,min),max);}
-function DraggableMapOverlay({className='',storageKey='map-overlay',children}){
+function DraggableMapOverlay({className='',storageKey='map-overlay',children,collapsible=false,collapseLabel='Map tools',defaultCollapsed=false}){
   const nodeRef=useRef(null);
   const dragRef=useRef(null);
   const [dragging,setDragging]=useState(false);
+  const [collapsed,setCollapsed]=useState(()=>{
+    if(!collapsible)return false;
+    try{const saved=localStorage.getItem(`soils:overlay-collapsed:${storageKey}`);if(saved!==null)return saved==='1';}catch{}
+    return Boolean(defaultCollapsed);
+  });
   const [offset,setOffset]=useState(()=>{
     try{const raw=localStorage.getItem(`soils:overlay:${storageKey}`);const parsed=raw?JSON.parse(raw):null;return {x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};}catch{return {x:0,y:0};}
   });
   const persist=(next)=>{try{localStorage.setItem(`soils:overlay:${storageKey}`,JSON.stringify(next));}catch{}};
+  const persistCollapsed=(next)=>{try{localStorage.setItem(`soils:overlay-collapsed:${storageKey}`,next?'1':'0');}catch{}};
   useEffect(()=>{
     let frame=0;
     const keepInBounds=()=>{
@@ -181,7 +187,7 @@ function DraggableMapOverlay({className='',storageKey='map-overlay',children}){
     };
     keepInBounds();window.addEventListener('resize',keepInBounds);
     return ()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',keepInBounds);};
-  },[storageKey]);
+  },[storageKey,collapsed]);
   const beginDrag=(event)=>{
     if(event.pointerType==='mouse' && event.button!==0)return;
     const node=nodeRef.current;const shell=node?.closest('.map-canvas-shell');
@@ -210,9 +216,11 @@ function DraggableMapOverlay({className='',storageKey='map-overlay',children}){
     try{event.currentTarget.releasePointerCapture?.(event.pointerId);}catch{}
   };
   const resetPosition=(event)=>{event.preventDefault();event.stopPropagation();const next={x:0,y:0};setOffset(next);persist(next);};
-  return <div ref={nodeRef} className={`${className} draggable-map-overlay ${dragging?'is-dragging':''}`.trim()} style={{'--overlay-drag-x':`${offset.x}px`,'--overlay-drag-y':`${offset.y}px`}}>
+  const toggleCollapsed=(event)=>{event.preventDefault();event.stopPropagation();setCollapsed(current=>{const next=!current;persistCollapsed(next);return next;});};
+  return <div ref={nodeRef} className={`${className} draggable-map-overlay ${dragging?'is-dragging':''} ${collapsed?'is-collapsed':''}`.trim()} style={{'--overlay-drag-x':`${offset.x}px`,'--overlay-drag-y':`${offset.y}px`}}>
     <button type="button" className="map-overlay-drag-handle" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onDoubleClick={resetPosition} title="Drag to move. Double-click to reset position." aria-label="Drag this map control"><span className="drag-grip-glyph" aria-hidden="true">⋮⋮</span><span>Drag</span></button>
-    {children}
+    {!collapsed&&children}
+    {collapsible&&<button type="button" className="map-overlay-collapse-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} title={collapsed?`Open ${collapseLabel}`:`Collapse ${collapseLabel}`}><span>{collapsed?collapseLabel:'Hide'}</span>{collapsed?<ChevronRight size={14}/>:<ChevronLeft size={14}/>}</button>}
   </div>;
 }
 
@@ -283,7 +291,7 @@ function MapWorkspace({
     <div className={`map-workspace-body ${admin?'has-admin-editor':''}`}>
       <div className="map-canvas-shell">
         <SoilMap farms={farms} sensors={sensors} plots={plots} droneMappings={droneMappings} requests={requests} height={height} selectedFarmId={activeFarmId} onFarmClick={onFarmClick} visibility={visibility} visibleSensorIds={visibleSensorIds} visiblePlotIds={visiblePlotIds} selectedSensorId={selectedSensorId} selectedPlotId={selectedPlotId} selectedDroneId={selectedDroneId} focusTarget={focusTarget} onSensorClick={onSensorClick} onPlotClick={onPlotClick} onDroneClick={onDroneClick} onDroneDelete={onDroneDelete} canDeleteDrone={admin} drawMode={drawMode} drawPoints={drawPoints} onMapPoint={onMapPoint} drawCoverageM={drawCoverageM} drawOrientation={drawOrientation} onDrawOrientation={onDrawOrientation} showMapPopups={showMapPopups} fitRequestKey={fitRequestKey} fitBoundaryIndex={fitBoundaryIndex} dataRevision={dataRevision}/>
-        <DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${admin?'admin':'farmer'}`}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>
+        <DraggableMapOverlay className={`map-workspace-head map-overlay-head ${embedded&&modeHint?'overview-controlled':''}`} storageKey={`head-${admin?'admin':'farmer'}`} collapsible collapseLabel="Map tools" defaultCollapsed={typeof window!=='undefined'&&window.matchMedia?.('(max-width: 820px)')?.matches}>{!(embedded&&modeHint)&&<MapModeTabs value={mapMode} onChange={changeMode}/>}<LayerVisibility visibility={visibility} onChange={setVisibility} sensors={sensors} visibleSensorIds={visibleSensorIds} onSensorToggle={sensorToggle} plots={plots} visiblePlotIds={visiblePlotIds} onPlotToggle={plotToggle}/></DraggableMapOverlay>
         {sectionControl && <DraggableMapOverlay className="map-section-overlay" storageKey={`section-${admin?'admin':'farmer'}`}>{sectionControl}</DraggableMapOverlay>}
         {toolbar && <DraggableMapOverlay className="map-editor-side map-editor-overlay" storageKey={`editor-${admin?'admin':'farmer-request'}`}>{toolbar}</DraggableMapOverlay>}
         {preview&&<div className="map-preview-float">{preview}</div>}

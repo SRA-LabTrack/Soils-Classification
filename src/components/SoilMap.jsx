@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Polygon, Polyline, Rectangle, CircleMarker, Popup, Tooltip, Marker, LayerGroup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -181,6 +181,65 @@ function sanitizeBoundary(points=[]) {
     if (Math.abs(first[0]-last[0])<1e-10 && Math.abs(first[1]-last[1])<1e-10) clean.pop();
   }
   return clean;
+}
+
+
+function clampLegendOffset(value,min,max){return Math.min(Math.max(value,min),max);}
+function DraggableMapLegend({children}) {
+  const nodeRef=useRef(null);
+  const dragRef=useRef(null);
+  const [dragging,setDragging]=useState(false);
+  const [offset,setOffset]=useState(()=>{
+    try{const raw=localStorage.getItem('soils:map-legend-position');const parsed=raw?JSON.parse(raw):null;return {x:Number(parsed?.x)||0,y:Number(parsed?.y)||0};}catch{return {x:0,y:0};}
+  });
+  const persist=(next)=>{try{localStorage.setItem('soils:map-legend-position',JSON.stringify(next));}catch{}};
+  useEffect(()=>{
+    let frame=0;
+    const keepInBounds=()=>{
+      cancelAnimationFrame(frame);
+      frame=requestAnimationFrame(()=>{
+        const node=nodeRef.current;const shell=node?.closest('.soil-map');if(!node||!shell)return;
+        const rect=node.getBoundingClientRect(),bounds=shell.getBoundingClientRect();
+        let dx=0,dy=0;
+        if(rect.left<bounds.left+6)dx=(bounds.left+6)-rect.left;else if(rect.right>bounds.right-6)dx=(bounds.right-6)-rect.right;
+        if(rect.top<bounds.top+6)dy=(bounds.top+6)-rect.top;else if(rect.bottom>bounds.bottom-6)dy=(bounds.bottom-6)-rect.bottom;
+        if(!dx&&!dy)return;
+        setOffset(current=>{const next={x:current.x+dx,y:current.y+dy};persist(next);return next;});
+      });
+    };
+    keepInBounds();window.addEventListener('resize',keepInBounds);
+    return ()=>{cancelAnimationFrame(frame);window.removeEventListener('resize',keepInBounds);};
+  },[]);
+  const beginDrag=(event)=>{
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    const node=nodeRef.current;const shell=node?.closest('.soil-map');if(!node||!shell)return;
+    event.preventDefault();event.stopPropagation();
+    const rect=node.getBoundingClientRect(),bounds=shell.getBoundingClientRect();
+    dragRef.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,startOffset:{...offset},rect,bounds};
+    event.currentTarget.setPointerCapture?.(event.pointerId);setDragging(true);
+  };
+  const moveDrag=(event)=>{
+    const drag=dragRef.current;if(!drag||drag.pointerId!==event.pointerId)return;
+    event.preventDefault();event.stopPropagation();
+    const baseLeft=drag.rect.left-drag.startOffset.x,baseTop=drag.rect.top-drag.startOffset.y;
+    const minX=drag.bounds.left+6-baseLeft,maxX=drag.bounds.right-6-(baseLeft+drag.rect.width);
+    const minY=drag.bounds.top+6-baseTop,maxY=drag.bounds.bottom-6-(baseTop+drag.rect.height);
+    setOffset({
+      x:clampLegendOffset(drag.startOffset.x+(event.clientX-drag.startX),Math.min(minX,maxX),Math.max(minX,maxX)),
+      y:clampLegendOffset(drag.startOffset.y+(event.clientY-drag.startY),Math.min(minY,maxY),Math.max(minY,maxY)),
+    });
+  };
+  const endDrag=(event)=>{
+    const drag=dragRef.current;if(!drag||drag.pointerId!==event.pointerId)return;
+    event.preventDefault();event.stopPropagation();dragRef.current=null;setDragging(false);
+    setOffset(current=>{persist(current);return current;});
+    try{event.currentTarget.releasePointerCapture?.(event.pointerId);}catch{}
+  };
+  const reset=(event)=>{event.preventDefault();event.stopPropagation();const next={x:0,y:0};setOffset(next);persist(next);};
+  return <div ref={nodeRef} className={`map-legend draggable-map-legend ${dragging?'is-dragging':''}`} style={{'--legend-drag-x':`${offset.x}px`,'--legend-drag-y':`${offset.y}px`}}>
+    <button type="button" className="map-legend-drag-handle" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onDoubleClick={reset} title="Drag legend. Double-click to reset." aria-label="Drag map legend"><span aria-hidden="true">⋮⋮</span><b>Drag legend</b></button>
+    <div className="map-legend-items">{children}</div>
+  </div>;
 }
 
 function orient(a,b,c) {
@@ -504,14 +563,14 @@ export default function SoilMap({
         {drawPoints.map((point,i)=><CircleMarker key={`${point[0]}-${point[1]}-${i}`} center={point} radius={6} interactive={false} pathOptions={{color:'#fff',weight:2,fillColor:'#176338',fillOpacity:1}}><Tooltip permanent direction="top" offset={[0,-5]}>{i+1}</Tooltip></CircleMarker>)}
       </>}
     </MapContainer>
-    <div className="map-legend">
+    <DraggableMapLegend>
       {v.sensors&&<span><i className="legend-sensor"/> Sensor</span>}
       {v.sensorCoverage&&<span><i className="legend-sensor"/> Coverage</span>}
       {v.soilPlots&&<span><i className="legend-plot"/> Soil analysis plot</span>}
       {v.droneMapping&&<span><i className="legend-drone"/> Drone mapping</span>}
       {v.farmBoundary&&<span><i className="legend-farm"/> Farm boundary</span>}
       {requests.some(request=>String(request.status||'pending').toLowerCase()==='pending')&&<span><i className="legend-request"/> Pending request</span>}
-    </div>
+    </DraggableMapLegend>
     {drawMode&&<div className="drawing-hint">{drawMode==='sensor'?`Drag the sensor pin to position. Then drag the ROTATE handle around it to turn the coverage square (${Number(drawOrientation||0).toFixed(0)}°).`:'Click point-by-point to trace the shape. The polygon closes automatically when saved.'}</div>}
   </div>;
 }
